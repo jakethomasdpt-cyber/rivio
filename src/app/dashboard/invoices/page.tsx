@@ -637,7 +637,7 @@ export default function InvoicesPage() {
           onCancel={closeNewInvoiceModal}
           workspaceVenmo={workspace?.venmo_handle || ''}
           workspaceZelle={workspace?.zelle_phone || ''}
-          workspaceStripe={!!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+          workspaceStripe={true}
         />
       </Modal>
     </div>
