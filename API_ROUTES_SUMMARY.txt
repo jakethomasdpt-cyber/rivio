@@ -1,0 +1,89 @@
+PT365 INVOICE APP - API ROUTES IMPLEMENTATION
+=============================================
+
+All 10 API route files have been successfully created. Here's a summary:
+
+1. /src/app/api/clients/route.ts
+   - GET: List all clients (ordered by name)
+   - POST: Create new client with email, phone, address, notes
+
+2. /src/app/api/clients/[id]/route.ts
+   - GET: Get single client with invoices
+   - PUT: Update client details
+   - DELETE: Delete client (prevents if unpaid invoices exist)
+
+3. /src/app/api/invoices/route.ts
+   - GET: List invoices with client names and line items
+   - POST: Create invoice with auto-generated invoice number (PT + YYMM + 3 random digits)
+     * Calculates subtotal, tax, and total
+     * Creates line items
+     * Generates timeline event 'created'
+
+4. /src/app/api/invoices/[id]/route.ts
+   - GET: Get single invoice with line items and timeline events
+   - PUT: Update invoice (status, notes, due date, etc.)
+   - DELETE: Delete invoice (only draft or cancelled status)
+
+5. /src/app/api/invoices/[id]/send/route.ts
+   - POST: Send invoice via email
+     * Uses Resend API
+     * Generates beautiful branded HTML email with PT365 blue header
+     * Includes payment buttons (Card, Venmo, Zelle)
+     * Sets invoice status to 'sent' and creates timeline event
+     * Generates portal token if not exists
+
+6. /src/app/api/invoices/[id]/mark-paid/route.ts
+   - POST: Mark invoice as paid manually
+     * Accepts payment_method (venmo, zelle, other)
+     * Updates status to 'paid' with timestamp
+     * Creates timeline event 'paid'
+
+7. /src/app/api/invoices/[id]/duplicate/route.ts
+   - POST: Duplicate an invoice
+     * Creates new invoice with same client and line items
+     * Generates new invoice number and due date (today + 30 days)
+     * Status set to 'draft'
+
+8. /src/app/api/stripe/checkout/route.ts
+   - POST: Create Stripe checkout session
+     * Maps line items to Stripe format
+     * Generates portal token
+     * Stores stripe_checkout_session_id in invoice
+     * Returns session URL
+
+9. /src/app/api/stripe/webhook/route.ts
+   - POST: Handle Stripe webhook events
+     * Verifies webhook signature
+     * Processes checkout.session.completed events
+     * Updates invoice status to 'paid' with Stripe payment intent ID
+     * Creates timeline event 'paid'
+     * Uses 'force-dynamic' export for App Router
+
+10. /src/app/api/portal/[token]/route.ts
+    - GET: Public invoice access via portal token (no auth required)
+      * Returns invoice with client info (excludes internal_notes)
+      * Auto-updates status from 'sent' to 'viewed'
+      * Creates timeline event 'viewed'
+
+KEY FEATURES IMPLEMENTED:
+========================
+- Supabase service role key for single-user app (bypasses RLS)
+- Proper error handling with appropriate HTTP status codes
+- Invoice number generation with uniqueness guarantee
+- Email integration with Resend (branded HTML with inline CSS)
+- Stripe integration with webhook signature verification
+- Portal token system for client invoice access
+- Timeline event tracking for all invoice actions
+- Tax calculation and line item management
+- Payment method tracking (stripe, venmo, zelle, other)
+
+ENVIRONMENT VARIABLES REQUIRED:
+==============================
+- NEXT_PUBLIC_SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- RESEND_API_KEY
+- NEXT_PUBLIC_APP_URL
+
+All routes return JSON responses with appropriate status codes.

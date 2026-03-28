@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --font-headline: "Manrope", sans-serif;
+  --color-primary: #00346f;
+  --color-primary-dark: #004a99;
+  --color-primary-soft: #d7e2ff;
+  --color-surface: #f9f9ff;
+  --color-surface-low: #f0f3ff;
+  --color-surface-panel: #ffffff;
+  --color-surface-high: #e7eeff;
+  --color-border: #c2c6d3;
+  --color-text: #111c2d;
+  --color-text-muted: #424751;
+  --color-sidebar: #263143;
+  --color-success: #0f766e;
+  --color-warning: #9a3412;
+  --color-danger: #ba1a1a;
+}
+
+html {
+  background: var(--color-surface);
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(215, 226, 255, 0.85), transparent 35%),
+    linear-gradient(180deg, #f9f9ff 0%, #eef3ff 100%);
+  color: var(--color-text);
+  @apply antialiased;
+}
+
+h1, h2, h3, .font-headline {
+  font-family: var(--font-headline);
+  letter-spacing: -0.02em;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at top right, rgba(171, 199, 255, 0.5), transparent 30%),
+    linear-gradient(180deg, #f9f9ff 0%, #ecf1ff 100%);
+}
+
+.app-panel {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(194, 198, 211, 0.7);
+  box-shadow: 0 10px 30px rgba(17, 28, 45, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.tonal-panel {
+  background: linear-gradient(180deg, rgba(231, 238, 255, 0.9), rgba(255, 255, 255, 0.92));
+  border: 1px solid rgba(194, 198, 211, 0.72);
+}
+
+.topbar-glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(194, 198, 211, 0.4);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c2c6d3;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #737783;
+}
+
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.05s ease;
+}
+
+button, a, input, select, textarea {
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
