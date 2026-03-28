@@ -39,147 +39,266 @@ function generateInvoiceEmailHTML(
   workspace: any
 ): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const stripeLinkUrl = `${appUrl}/portal/${portalToken}`;
+  const portalUrl = `${appUrl}/portal/${portalToken}`;
 
   const businessName = escapeHtml(workspace?.business_name || 'Your Provider');
   const venmoHandle = escapeHtml(workspace?.venmo_handle || '');
   const zelleContact = escapeHtml(workspace?.zelle_phone || '');
-  // Strip non-hex-color characters to prevent CSS injection
-  const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '') ? workspace.brand_color : '#2563eb';
+  const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '') ? workspace.brand_color : '#1d4ed8';
+
+  // Darken brand color slightly for hover states (simplified: use as-is for email)
+  const brandColorLight = brandColor + '18'; // 10% opacity version for backgrounds
 
   const venmoDeepLink = venmoHandle
     ? `venmo://paycharge?txn=pay&recipients=${venmoHandle}&amount=${invoice.total}&note=${encodeURIComponent('Invoice ' + invoice.invoice_number)}`
     : '';
 
   const lineItemsHTML = lineItems
-    .map(
-      (item) => `
-    <tr style="border-bottom: 1px solid #e5e7eb;">
-      <td style="padding: 12px; text-align: left; font-size: 14px;">${escapeHtml(item.service)}</td>
-      <td style="padding: 12px; text-align: left; font-size: 14px;">${escapeHtml(item.provider)}</td>
-      <td style="padding: 12px; text-align: right; font-size: 14px;">${formatCurrency(Number(item.rate) || 0)}</td>
-      <td style="padding: 12px; text-align: right; font-size: 14px;">${Number(item.quantity) || 0}</td>
-      <td style="padding: 12px; text-align: right; font-size: 14px; font-weight: 600;">${formatCurrency(Number(item.amount) || 0)}</td>
-    </tr>
-  `
+    .map((item, i) => `
+    <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+      <td style="padding: 14px 16px; font-size: 14px; color: #1e293b; border-bottom: 1px solid #e2e8f0;">${escapeHtml(item.service)}</td>
+      <td style="padding: 14px 16px; font-size: 14px; color: #64748b; border-bottom: 1px solid #e2e8f0;">${escapeHtml(item.provider)}</td>
+      <td style="padding: 14px 16px; font-size: 14px; color: #1e293b; text-align: right; border-bottom: 1px solid #e2e8f0;">${formatCurrency(Number(item.rate) || 0)}</td>
+      <td style="padding: 14px 16px; font-size: 14px; color: #1e293b; text-align: center; border-bottom: 1px solid #e2e8f0;">${Number(item.quantity) || 0}</td>
+      <td style="padding: 14px 16px; font-size: 14px; font-weight: 700; color: #1e293b; text-align: right; border-bottom: 1px solid #e2e8f0;">${formatCurrency(Number(item.amount) || 0)}</td>
+    </tr>`
     )
     .join('');
 
-  const paymentMethodsHTML = [
-    `<a href="${stripeLinkUrl}" target="_blank" style="display: block; background-color: ${brandColor}; color: #ffffff; padding: 12px 16px; text-align: center; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">Pay with Card</a>`,
-    ...(venmoHandle ? [`<a href="${venmoDeepLink}" style="display: block; background-color: #3d95ce; color: #ffffff; padding: 12px 16px; text-align: center; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">Pay with Venmo</a>`] : []),
-    ...(zelleContact ? [`<p style="display: block; background-color: #6b7280; color: #ffffff; padding: 12px 16px; text-align: center; border-radius: 6px; font-size: 14px; font-weight: 600; margin: 0;">Pay via Zelle: Send to ${zelleContact}</p>`] : []),
-  ].join('');
+  // Build payment method buttons
+  const paymentButtons: string[] = [];
+
+  // Primary CTA — view & pay
+  paymentButtons.push(`
+    <tr>
+      <td align="center" style="padding-bottom: 12px;">
+        <a href="${portalUrl}" target="_blank"
+           style="display: inline-block; background-color: ${brandColor}; color: #ffffff; text-decoration: none;
+                  padding: 14px 40px; border-radius: 8px; font-size: 16px; font-weight: 700;
+                  letter-spacing: -0.01em; min-width: 220px; text-align: center;">
+          View &amp; Pay Invoice →
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" style="padding-bottom: 20px;">
+        <span style="font-size: 12px; color: #94a3b8;">Pay by card or bank transfer · secured by Stripe</span>
+      </td>
+    </tr>`);
+
+  if (venmoHandle) {
+    paymentButtons.push(`
+    <tr>
+      <td align="center" style="padding-bottom: 12px;">
+        <a href="${venmoDeepLink}"
+           style="display: inline-block; background-color: #3b82f6; color: #ffffff; text-decoration: none;
+                  padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;
+                  min-width: 220px; text-align: center;">
+          Pay with Venmo (@${venmoHandle})
+        </a>
+      </td>
+    </tr>`);
+  }
+
+  if (zelleContact) {
+    paymentButtons.push(`
+    <tr>
+      <td align="center" style="padding-bottom: 8px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 320px; margin: 0 auto;
+               background-color: #f1f5f9; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="padding: 14px 20px; text-align: center;">
+              <p style="margin: 0; font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Pay via Zelle</p>
+              <p style="margin: 6px 0 0 0; font-size: 16px; font-weight: 700; color: #1e293b; font-family: monospace;">${zelleContact}</p>
+              <p style="margin: 6px 0 0 0; font-size: 12px; color: #94a3b8;">Include invoice # in the note</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`);
+  }
+
+  const paymentSection = paymentButtons.join('');
 
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Invoice from ${businessName}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-    <!-- Header -->
-    <div style="background-color: ${brandColor}; padding: 32px 24px; text-align: center;">
-      <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">${businessName}</h1>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; -webkit-font-smoothing: antialiased;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 40px 16px;">
+  <tr>
+    <td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px;">
 
-    <!-- Content -->
-    <div style="padding: 32px 24px;">
-      <!-- Invoice Title -->
-      <h2 style="margin: 0 0 24px 0; color: #1f2937; font-size: 20px; font-weight: 600;">Invoice</h2>
+        <!-- Header bar -->
+        <tr>
+          <td style="background-color: ${brandColor}; border-radius: 12px 12px 0 0; padding: 32px 40px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <p style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">${businessName}</p>
+                </td>
+                <td align="right">
+                  <p style="margin: 0; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.08em;">Invoice</p>
+                  <p style="margin: 4px 0 0 0; font-size: 18px; font-weight: 700; color: #ffffff;">${escapeHtml(invoice.invoice_number)}</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
 
-      <!-- Invoice Details Grid -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px;">
-        <div>
-          <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Invoice Number</p>
-          <p style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">${escapeHtml(invoice.invoice_number)}</p>
-        </div>
-        <div>
-          <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Invoice Date</p>
-          <p style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">${formatDate(invoice.created_at)}</p>
-        </div>
-        <div>
-          <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Due Date</p>
-          <p style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">${formatDate(invoice.due_date)}</p>
-        </div>
-        <div>
-          <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Status</p>
-          <p style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600; text-transform: capitalize;">${invoice.status}</p>
-        </div>
-      </div>
+        <!-- White card body -->
+        <tr>
+          <td style="background-color: #ffffff; padding: 0;">
 
-      <!-- Bill To -->
-      <div style="margin-bottom: 32px;">
-        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Bill To</p>
-        <p style="margin: 0; color: #1f2937; font-size: 16px; font-weight: 600;">${escapeHtml(client.name)}</p>
-        ${client.email ? `<p style="margin: 8px 0 0 0; color: #6b7280; font-size: 14px;">${escapeHtml(client.email)}</p>` : ''}
-      </div>
+            <!-- Greeting & amount due -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 32px 40px 24px; border-bottom: 1px solid #e2e8f0;">
+                  <p style="margin: 0 0 4px 0; font-size: 16px; color: #475569;">Hi ${escapeHtml(client.name)},</p>
+                  <p style="margin: 0; font-size: 15px; color: #64748b; line-height: 1.6;">
+                    Here is your invoice from <strong style="color: #1e293b;">${businessName}</strong>.
+                    Please review the details below and pay by <strong style="color: #1e293b;">${formatDate(invoice.due_date)}</strong>.
+                  </p>
+                </td>
+              </tr>
+            </table>
 
-      <!-- Line Items Table -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 32px;">
-        <thead>
-          <tr style="border-bottom: 2px solid ${brandColor};">
-            <th style="padding: 12px; text-align: left; font-size: 12px; font-weight: 700; color: #1f2937; text-transform: uppercase;">Service</th>
-            <th style="padding: 12px; text-align: left; font-size: 12px; font-weight: 700; color: #1f2937; text-transform: uppercase;">Provider</th>
-            <th style="padding: 12px; text-align: right; font-size: 12px; font-weight: 700; color: #1f2937; text-transform: uppercase;">Rate</th>
-            <th style="padding: 12px; text-align: right; font-size: 12px; font-weight: 700; color: #1f2937; text-transform: uppercase;">Qty</th>
-            <th style="padding: 12px; text-align: right; font-size: 12px; font-weight: 700; color: #1f2937; text-transform: uppercase;">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${lineItemsHTML}
-        </tbody>
+            <!-- Invoice meta: dates + amount -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 24px 40px; border-bottom: 1px solid #e2e8f0;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="width: 33%; padding-right: 16px;">
+                        <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Invoice Date</p>
+                        <p style="margin: 0; font-size: 15px; font-weight: 600; color: #1e293b;">${formatDate(invoice.created_at)}</p>
+                      </td>
+                      <td style="width: 33%; padding-right: 16px;">
+                        <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Due Date</p>
+                        <p style="margin: 0; font-size: 15px; font-weight: 600; color: #1e293b;">${formatDate(invoice.due_date)}</p>
+                      </td>
+                      <td style="width: 33%; text-align: right;">
+                        <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Amount Due</p>
+                        <p style="margin: 0; font-size: 22px; font-weight: 800; color: ${brandColor};">${formatCurrency(invoice.total)}</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Line items -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 24px 40px 0;">
+                  <p style="margin: 0 0 12px 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Services</p>
+                  <table width="100%" cellpadding="0" cellspacing="0" style="border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+                    <thead>
+                      <tr style="background-color: #f8fafc;">
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Service</th>
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Provider</th>
+                        <th style="padding: 10px 16px; text-align: right; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Rate</th>
+                        <th style="padding: 10px 16px; text-align: center; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Qty</th>
+                        <th style="padding: 10px 16px; text-align: right; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${lineItemsHTML}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Totals -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 20px 40px 24px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td>&nbsp;</td>
+                      <td style="width: 220px;">
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="padding: 5px 0; font-size: 14px; color: #64748b;">Subtotal</td>
+                            <td style="padding: 5px 0; font-size: 14px; color: #1e293b; text-align: right;">${formatCurrency(invoice.subtotal)}</td>
+                          </tr>
+                          ${invoice.tax_rate > 0 ? `
+                          <tr>
+                            <td style="padding: 5px 0; font-size: 14px; color: #64748b;">Tax (${(invoice.tax_rate * 100).toFixed(0)}%)</td>
+                            <td style="padding: 5px 0; font-size: 14px; color: #1e293b; text-align: right;">${formatCurrency(invoice.tax_amount)}</td>
+                          </tr>` : ''}
+                          <tr>
+                            <td colspan="2" style="padding-top: 8px;">
+                              <div style="border-top: 2px solid #e2e8f0; margin-bottom: 8px;"></div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="font-size: 16px; font-weight: 700; color: #1e293b;">Total Due</td>
+                            <td style="font-size: 20px; font-weight: 800; color: ${brandColor}; text-align: right;">${formatCurrency(invoice.total)}</td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            ${invoice.notes ? `
+            <!-- Notes -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 0 40px 24px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <tr>
+                      <td style="padding: 16px 20px;">
+                        <p style="margin: 0 0 6px 0; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Note</p>
+                        <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.6;">${escapeHtml(invoice.notes)}</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>` : ''}
+
+            <!-- Payment CTA section -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding: 0 40px 40px; border-top: 2px solid ${brandColor}; padding-top: 32px; margin-top: 8px;">
+                  <p style="margin: 0 0 20px 0; font-size: 16px; font-weight: 700; color: #1e293b; text-align: center;">Pay your invoice</p>
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    ${paymentSection}
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background-color: #f8fafc; border-radius: 0 0 12px 12px; border-top: 1px solid #e2e8f0; padding: 24px 40px; text-align: center;">
+            <p style="margin: 0; font-size: 13px; font-weight: 600; color: #475569;">${businessName}</p>
+            <p style="margin: 8px 0 0 0; font-size: 12px; color: #94a3b8;">
+              Questions? Reply to this email and we'll get back to you.
+            </p>
+            <p style="margin: 8px 0 0 0; font-size: 11px; color: #cbd5e1;">
+              This invoice was sent securely via Rivio.
+            </p>
+          </td>
+        </tr>
+
       </table>
-
-      <!-- Totals -->
-      <div style="border-top: 2px solid ${brandColor}; padding-top: 16px; margin-bottom: 32px;">
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
-          <div style="width: 200px;">
-            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 14px; margin-bottom: 8px;">
-              <span>Subtotal:</span>
-              <span>${formatCurrency(invoice.subtotal)}</span>
-            </div>
-            ${invoice.tax_rate > 0 ? `
-            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 14px; margin-bottom: 8px;">
-              <span>Tax (${(invoice.tax_rate * 100).toFixed(0)}%):</span>
-              <span>${formatCurrency(invoice.tax_amount)}</span>
-            </div>
-            ` : ''}
-            <div style="display: flex; justify-content: space-between; color: #1f2937; font-size: 18px; font-weight: 700; border-top: 1px solid #e5e7eb; padding-top: 8px;">
-              <span>Total:</span>
-              <span>${formatCurrency(invoice.total)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      ${invoice.notes ? `
-      <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin-bottom: 32px;">
-        <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;">Notes</p>
-        <p style="margin: 0; color: #1f2937; font-size: 14px; line-height: 1.5;">${escapeHtml(invoice.notes)}</p>
-      </div>
-      ` : ''}
-
-      <!-- Payment Methods -->
-      <div style="margin-bottom: 32px;">
-        <p style="margin: 0 0 16px 0; color: #1f2937; font-size: 14px; font-weight: 600;">Payment Methods:</p>
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          ${paymentMethodsHTML}
-        </div>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #f9fafb; padding: 24px; border-top: 1px solid #e5e7eb; text-align: center;">
-      <p style="margin: 0; color: #6b7280; font-size: 12px;">
-        <strong>${businessName}</strong>
-      </p>
-      <p style="margin: 16px 0 0 0; color: #9ca3af; font-size: 11px;">
-        This is an automated message. Please do not reply to this email.
-      </p>
-    </div>
-  </div>
+    </td>
+  </tr>
+</table>
 </body>
 </html>`;
 }

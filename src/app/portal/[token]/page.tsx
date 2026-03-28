@@ -334,21 +334,24 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
           {/* Payment Section */}
           {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
             <div className="px-8 py-8">
-              <h2 className="mb-6 text-xl font-bold text-slate-900 dark:text-slate-100">
+              <h2 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">
                 Choose how to pay
               </h2>
-              <div className="space-y-4">
+              <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
+                All payments are secure and encrypted.
+              </p>
+              <div className="space-y-3">
                 {/* Credit / Debit Card via Stripe */}
                 {(invoice as any).accept_credit_card !== false && (
-                  <StripePayButton invoiceId={invoice.id} total={invoice.total} />
+                  <StripePayButton portalToken={token} total={invoice.total} />
                 )}
 
                 {/* ACH / Bank Transfer via Stripe */}
                 {(invoice as any).accept_ach === true && (
-                  <AchPayButton invoiceId={invoice.id} total={invoice.total} />
+                  <AchPayButton portalToken={token} total={invoice.total} />
                 )}
 
-                {/* Venmo — only shown if workspace has a Venmo handle and invoice allows it */}
+                {/* Venmo */}
                 {venmoHandle && (invoice as any).accept_venmo !== false && (
                   <VenmoPayButton
                     venmoHandle={venmoHandle}
@@ -357,30 +360,27 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                   />
                 )}
 
-                {/* Zelle — only shown if workspace has Zelle contact and invoice allows it */}
+                {/* Zelle */}
                 {zelleContact && (invoice as any).accept_zelle !== false && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                     <div className="flex items-start gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900">
-                        <svg
-                          className="h-5 w-5 text-green-700 dark:text-green-300"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                        >
-                          <path d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" />
+                      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-violet-50 dark:bg-violet-950">
+                        <svg className="h-5 w-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-semibold text-slate-900 dark:text-slate-100">Pay with Zelle</p>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                          Send payment to:
-                          <span className="mt-2 block font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-                            {zelleContact}
-                          </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">Zelle</p>
+                        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                          Send directly to your bank · instant, no fees
                         </p>
-                        <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">
-                          Include invoice number in the payment note
-                        </p>
+                        <div className="mt-3 rounded-lg bg-slate-50 px-4 py-3 dark:bg-slate-700">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Send to</p>
+                          <p className="mt-1 font-mono text-base font-bold text-slate-900 dark:text-slate-100">{zelleContact}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Include <span className="font-semibold">{invoice.invoice_number}</span> in the note
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
