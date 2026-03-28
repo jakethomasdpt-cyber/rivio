@@ -28,6 +28,7 @@ import Textarea from '@/components/ui/Textarea';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatCurrency, formatDate, generateInvoiceNumber, cn, getDaysUntilDue } from '@/lib/utils';
 import type { Client, Invoice } from '@/types';
+import { useWorkspace } from '@/hooks/useWorkspace';
 
 interface DraftLineItem {
   id: string;
@@ -48,6 +49,9 @@ interface NewInvoiceForm {
   notes: string;
   internal_notes: string;
   reminder_enabled: boolean;
+  accept_credit_card: boolean;
+  accept_venmo: boolean;
+  accept_zelle: boolean;
 }
 
 type FilterTab = 'all' | 'draft' | 'sent' | 'paid' | 'overdue' | 'viewed';
@@ -84,10 +88,14 @@ function createEmptyInvoiceForm(): NewInvoiceForm {
     notes: '',
     internal_notes: '',
     reminder_enabled: true,
+    accept_credit_card: true,
+    accept_venmo: false,
+    accept_zelle: false,
   };
 }
 
 export default function InvoicesPage() {
+  const { workspace } = useWorkspace();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,6 +255,8 @@ export default function InvoicesPage() {
 
     return {
       client_id: newInvoiceForm.client_id || null,
+      client_name: newInvoiceForm.client_name.trim(),
+      client_email: newInvoiceForm.client_email.trim(),
       line_items: newInvoiceForm.line_items.map((item) => ({
         service: item.service.trim(),
         service_date: item.service_date,
@@ -259,6 +269,9 @@ export default function InvoicesPage() {
       notes: newInvoiceForm.notes.trim() || null,
       internal_notes: newInvoiceForm.internal_notes.trim() || null,
       reminder_enabled: newInvoiceForm.reminder_enabled,
+      accept_credit_card: newInvoiceForm.accept_credit_card,
+      accept_venmo: newInvoiceForm.accept_venmo,
+      accept_zelle: newInvoiceForm.accept_zelle,
     };
   };
 
@@ -280,6 +293,45 @@ export default function InvoicesPage() {
       closeNewInvoiceModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create invoice');
+    }
+  };
+
+  const handleSaveAndSend = async () => {
+    const payload = buildInvoicePayload();
+    if (!payload) return;
+
+    // Must have client email to send
+    const email = newInvoiceForm.client_email.trim();
+    if (!email) {
+      setError('A client email address is required to send an invoice.');
+      return;
+    }
+
+    try {
+      // 1. Create the invoice (API auto-creates client if needed)
+      const created = await apiFetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          client_name: newInvoiceForm.client_name.trim(),
+          client_email: email,
+        }),
+      });
+
+      // 2. Immediately send it
+      await apiFetch(`/api/invoices/${created.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      // 3. Refresh list
+      const invoicesData = await apiFetch('/api/invoices');
+      setInvoices(invoicesData || []);
+
+      closeNewInvoiceModal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create and send invoice');
     }
   };
 
@@ -578,7 +630,11 @@ export default function InvoicesPage() {
           total={newInvoiceTotal}
           calculateLineItemAmount={calculateLineItemAmount}
           onSave={handleSaveInvoice}
+          onSend={handleSaveAndSend}
           onCancel={closeNewInvoiceModal}
+          workspaceVenmo={workspace?.venmo_handle || ''}
+          workspaceZelle={workspace?.zelle_phone || ''}
+          workspaceStripe={!!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
         />
       </Modal>
     </div>
@@ -840,7 +896,11 @@ function NewInvoiceFormPanel({
   total,
   calculateLineItemAmount,
   onSave,
+  onSend,
   onCancel,
+  workspaceVenmo,
+  workspaceZelle,
+  workspaceStripe,
 }: {
   clients: Client[];
   clientOptions: { value: string; label: string }[];
@@ -855,12 +915,17 @@ function NewInvoiceFormPanel({
   total: number;
   calculateLineItemAmount: (rate: number, quantity: number) => number;
   onSave: () => void;
+  onSend: () => void;
   onCancel: () => void;
+  workspaceVenmo: string;
+  workspaceZelle: string;
+  workspaceStripe: boolean;
 }) {
   const missingRequiredFields =
     !form.client_name.trim() ||
     !form.due_date ||
     form.line_items.some((item) => !item.service.trim());
+  const missingEmailForSend = !form.client_email.trim();
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
@@ -1064,13 +1129,127 @@ function NewInvoiceFormPanel({
         onChange={(event) => setForm((current) => ({ ...current, internal_notes: event.target.value }))}
       />
 
-      <div className="flex gap-3 border-t border-slate-200 pt-6 dark:border-slate-700">
-        <Button onClick={onSave} className="flex-1" disabled={missingRequiredFields}>
-          Save Draft
+      {/* Payment Options */}
+      <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/40">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">Payment options for this invoice</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Choose how your client can pay. These appear on the invoice portal.
+          </p>
+        </div>
+        <div className="divide-y divide-slate-100 dark:divide-slate-700">
+          {/* Credit / Debit Card */}
+          <label className={cn(
+            'flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30',
+            !workspaceStripe && 'opacity-50 cursor-not-allowed'
+          )}>
+            <input
+              type="checkbox"
+              checked={form.accept_credit_card}
+              disabled={!workspaceStripe}
+              onChange={(e) => setForm((c) => ({ ...c, accept_credit_card: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-1 items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <DollarSign className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">Credit / Debit Card</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {workspaceStripe ? 'Powered by Stripe' : 'Connect Stripe in Settings to enable'}
+                </p>
+              </div>
+            </div>
+            {form.accept_credit_card && workspaceStripe && (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">On</span>
+            )}
+          </label>
+
+          {/* Venmo */}
+          <label className={cn(
+            'flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30',
+            !workspaceVenmo && 'opacity-50 cursor-not-allowed'
+          )}>
+            <input
+              type="checkbox"
+              checked={form.accept_venmo}
+              disabled={!workspaceVenmo}
+              onChange={(e) => setForm((c) => ({ ...c, accept_venmo: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-1 items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">V</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">Venmo</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {workspaceVenmo ? `@${workspaceVenmo}` : 'Add your Venmo handle in Settings to enable'}
+                </p>
+              </div>
+            </div>
+            {form.accept_venmo && workspaceVenmo && (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">On</span>
+            )}
+          </label>
+
+          {/* Zelle */}
+          <label className={cn(
+            'flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30',
+            !workspaceZelle && 'opacity-50 cursor-not-allowed'
+          )}>
+            <input
+              type="checkbox"
+              checked={form.accept_zelle}
+              disabled={!workspaceZelle}
+              onChange={(e) => setForm((c) => ({ ...c, accept_zelle: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-1 items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <span className="text-sm font-bold text-purple-600 dark:text-purple-400">Z</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">Zelle</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {workspaceZelle ? workspaceZelle : 'Add your Zelle phone in Settings to enable'}
+                </p>
+              </div>
+            </div>
+            {form.accept_zelle && workspaceZelle && (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">On</span>
+            )}
+          </label>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="space-y-3 border-t border-slate-200 pt-6 dark:border-slate-700">
+        {/* Primary: Save & Send */}
+        <Button
+          onClick={onSend}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          disabled={missingRequiredFields || missingEmailForSend}
+        >
+          <Send className="mr-2 h-4 w-4" />
+          {missingEmailForSend ? 'Add client email to send' : 'Save & Send Invoice'}
         </Button>
-        <Button onClick={onCancel} variant="outline" className="flex-1">
-          Cancel
-        </Button>
+
+        {/* Secondary row */}
+        <div className="flex gap-3">
+          <Button
+            onClick={onSave}
+            variant="outline"
+            className="flex-1"
+            disabled={missingRequiredFields}
+          >
+            Save as Draft
+          </Button>
+          <Button onClick={onCancel} variant="outline" className="flex-1">
+            Cancel
+          </Button>
+        </div>
       </div>
     </div>
   );

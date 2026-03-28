@@ -89,20 +89,64 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      client_id,
+      client_id: rawClientId,
+      client_name,
+      client_email,
       line_items,
       tax_rate,
       due_date,
       notes,
       internal_notes,
       reminder_enabled,
+      accept_credit_card,
+      accept_venmo,
+      accept_zelle,
     } = body;
 
+    const supabase = createServerSupabaseClient();
+
+    // Resolve client_id — auto-create client if name/email provided without saved client
+    let client_id = rawClientId;
+
     if (!client_id) {
-      return NextResponse.json(
-        { error: 'Client ID is required' },
-        { status: 400 }
-      );
+      const trimmedName = (client_name || '').trim();
+      const trimmedEmail = (client_email || '').trim().toLowerCase();
+
+      if (!trimmedName) {
+        return NextResponse.json(
+          { error: 'Client name is required' },
+          { status: 400 }
+        );
+      }
+
+      // Try to find existing client by email first
+      if (trimmedEmail) {
+        const { data: existing } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('email', trimmedEmail)
+          .single();
+
+        if (existing) {
+          client_id = existing.id;
+        }
+      }
+
+      // Create new client if still not found
+      if (!client_id) {
+        const { data: newClient, error: clientError } = await supabase
+          .from('clients')
+          .insert([{ user_id: user.id, name: trimmedName, email: trimmedEmail || null }])
+          .select()
+          .single();
+
+        if (clientError) {
+          console.error('Auto-create client error:', clientError);
+          return NextResponse.json({ error: 'Failed to create client' }, { status: 500 });
+        }
+        client_id = newClient.id;
+      }
     }
 
     if (!line_items || !Array.isArray(line_items) || line_items.length === 0) {
@@ -163,9 +207,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
-
-    // Verify client belongs to user
+    // Verify client belongs to user (security check — even for auto-created clients)
     const { data: clientExists } = await supabase
       .from('clients')
       .select('id')
@@ -233,6 +275,9 @@ export async function POST(request: NextRequest) {
           notes: notes || null,
           internal_notes: internal_notes || null,
           reminder_enabled: reminder_enabled || false,
+          accept_credit_card: accept_credit_card !== false,
+          accept_venmo: accept_venmo === true,
+          accept_zelle: accept_zelle === true,
         },
       ])
       .select()
