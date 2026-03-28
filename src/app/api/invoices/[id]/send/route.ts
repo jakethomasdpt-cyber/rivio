@@ -267,7 +267,8 @@ export async function POST(
     const businessName = workspace?.business_name || 'Your Provider';
 
     const { error: emailError } = await resend.emails.send({
-      from: `${businessName} <onboarding@resend.dev>`,
+      from: `${businessName} <invoices@physicaltherapy365.com>`,
+      reply_to: 'jakethomasdpt@gmail.com',
       to: clientEmail,
       subject: `Invoice ${invoice.invoice_number} from ${businessName}`,
       html: emailHTML,
