@@ -4,6 +4,7 @@ import { Invoice, Workspace } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import StripePayButton from './StripePayButton';
 import VenmoPayButton from './VenmoPayButton';
+import AchPayButton from './AchPayButton';
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -337,11 +338,18 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                 Choose how to pay
               </h2>
               <div className="space-y-4">
-                {/* Stripe Payment */}
-                <StripePayButton invoiceId={invoice.id} total={invoice.total} />
+                {/* Credit / Debit Card via Stripe */}
+                {(invoice as any).accept_credit_card !== false && (
+                  <StripePayButton invoiceId={invoice.id} total={invoice.total} />
+                )}
 
-                {/* Venmo Payment — only shown if workspace has a Venmo handle */}
-                {venmoHandle && (
+                {/* ACH / Bank Transfer via Stripe */}
+                {(invoice as any).accept_ach === true && (
+                  <AchPayButton invoiceId={invoice.id} total={invoice.total} />
+                )}
+
+                {/* Venmo — only shown if workspace has a Venmo handle and invoice allows it */}
+                {venmoHandle && (invoice as any).accept_venmo !== false && (
                   <VenmoPayButton
                     venmoHandle={venmoHandle}
                     amount={invoice.total}
@@ -349,8 +357,8 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                   />
                 )}
 
-                {/* Zelle Payment — only shown if workspace has a Zelle phone/email */}
-                {zelleContact && (
+                {/* Zelle — only shown if workspace has Zelle contact and invoice allows it */}
+                {zelleContact && (invoice as any).accept_zelle !== false && (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800">
                     <div className="flex items-start gap-4">
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900">

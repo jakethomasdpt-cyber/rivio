@@ -60,16 +60,29 @@ export async function POST(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
+    // Determine which payment methods to offer based on invoice settings
+    const paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+    if (invoice.accept_credit_card !== false) paymentMethods.push('card');
+    if (invoice.accept_ach === true) paymentMethods.push('us_bank_account');
+    if (paymentMethods.length === 0) paymentMethods.push('card'); // safe fallback
+
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: paymentMethods,
       mode: 'payment',
+      ...(invoice.accept_ach === true && {
+        payment_method_options: {
+          us_bank_account: {
+            financial_connections: { permissions: ['payment_method'] },
+          },
+        },
+      }),
       line_items: (lineItems || []).map((item) => ({
         price_data: {
           currency: 'usd',
           product_data: {
             name: item.service,
-            description: `Provider: ${item.provider}`,
+            description: item.provider ? `Provider: ${item.provider}` : undefined,
           },
           unit_amount: Math.round(item.rate * 100),
         },
