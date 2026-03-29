@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import StripePayButton from './StripePayButton';
 import VenmoPayButton from './VenmoPayButton';
 import AchPayButton from './AchPayButton';
+import WalletPayButton from './WalletPayButton';
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -344,6 +345,11 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                 {/* Credit / Debit Card via Stripe */}
                 {(invoice as any).accept_credit_card !== false && (
                   <StripePayButton portalToken={token} total={invoice.total} />
+                )}
+
+                {/* Apple Pay / Google Pay */}
+                {(invoice as any).accept_wallet === true && (
+                  <WalletPayButton portalToken={token} total={invoice.total} />
                 )}
 
                 {/* ACH / Bank Transfer via Stripe */}

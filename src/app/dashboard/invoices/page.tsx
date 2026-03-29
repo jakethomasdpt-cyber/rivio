@@ -53,6 +53,7 @@ interface NewInvoiceForm {
   accept_venmo: boolean;
   accept_zelle: boolean;
   accept_ach: boolean;
+  accept_wallet: boolean;
 }
 
 type FilterTab = 'all' | 'draft' | 'sent' | 'paid' | 'overdue' | 'viewed';
@@ -93,6 +94,7 @@ function createEmptyInvoiceForm(): NewInvoiceForm {
     accept_venmo: false,
     accept_zelle: false,
     accept_ach: false,
+    accept_wallet: true,
   };
 }
 
@@ -275,6 +277,7 @@ export default function InvoicesPage() {
       accept_venmo: newInvoiceForm.accept_venmo,
       accept_zelle: newInvoiceForm.accept_zelle,
       accept_ach: newInvoiceForm.accept_ach,
+      accept_wallet: newInvoiceForm.accept_wallet,
     };
   };
 
@@ -1253,6 +1256,38 @@ function NewInvoiceFormPanel({
               </div>
             </div>
             {form.accept_ach && workspaceStripe && (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">On</span>
+            )}
+          </label>
+
+          {/* Apple Pay / Google Pay */}
+          <label className={cn(
+            'flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30',
+            !workspaceStripe && 'opacity-50 cursor-not-allowed'
+          )}>
+            <input
+              type="checkbox"
+              checked={form.accept_wallet}
+              disabled={!workspaceStripe}
+              onChange={(e) => setForm((c) => ({ ...c, accept_wallet: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-1 items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 dark:bg-slate-100">
+                <svg className="h-4 w-4 text-white dark:text-slate-900" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">Apple Pay / Google Pay</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {workspaceStripe
+                    ? 'One-tap wallet payments via Stripe — same card fees apply'
+                    : 'Connect Stripe in Settings to enable'}
+                </p>
+              </div>
+            </div>
+            {form.accept_wallet && workspaceStripe && (
               <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">On</span>
             )}
           </label>

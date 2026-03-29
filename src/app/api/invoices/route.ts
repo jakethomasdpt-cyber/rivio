@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
       accept_venmo,
       accept_zelle,
       accept_ach,
+      accept_wallet,
     } = body;
 
     const supabase = createServerSupabaseClient();
@@ -280,6 +281,7 @@ export async function POST(request: NextRequest) {
           accept_venmo: accept_venmo === true,
           accept_zelle: accept_zelle === true,
           accept_ach: accept_ach === true,
+          accept_wallet: accept_wallet !== false,
         },
       ])
       .select()

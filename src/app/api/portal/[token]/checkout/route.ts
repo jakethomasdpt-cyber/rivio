@@ -13,7 +13,7 @@ export async function POST(
   try {
     const { token: portalToken } = await params;
     const body = await request.json();
-    const { payment_method } = body; // 'card' | 'ach'
+    const { payment_method } = body; // 'card' | 'ach' | 'wallet'
 
     const supabase = createServerSupabaseClient();
 
@@ -68,6 +68,12 @@ export async function POST(
 
     // Determine payment method types
     const useAch = payment_method === 'ach' && invoice.accept_ach === true;
+    const useWallet = payment_method === 'wallet' && invoice.accept_wallet === true;
+
+    // Stripe Checkout automatically presents Apple Pay / Google Pay when 'card'
+    // is included — no need to list them separately. For the wallet flow we use
+    // the same 'card' method type but omit other options so the Stripe-hosted
+    // page renders the wallet buttons prominently.
     const paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = useAch
       ? ['us_bank_account']
       : ['card'];
