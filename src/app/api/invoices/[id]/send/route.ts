@@ -408,7 +408,8 @@ export async function POST(
         status: 'sent',
         sent_at: new Date().toISOString(),
       })
-      .eq('id', invoiceId);
+      .eq('id', invoiceId)
+      .eq('user_id', user.id);
 
     if (updateError) {
       console.error('Update invoice error:', updateError);
