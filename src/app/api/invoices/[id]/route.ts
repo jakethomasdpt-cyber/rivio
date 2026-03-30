@@ -139,10 +139,10 @@ export async function DELETE(
     const { id: invoiceId } = await params;
     const supabase = createServerSupabaseClient();
 
-    // Check invoice status and ownership
+    // Verify ownership
     const { data: invoice, error: fetchError } = await supabase
       .from('invoices')
-      .select('status')
+      .select('id')
       .eq('id', invoiceId)
       .eq('user_id', user.id)
       .single();
@@ -151,13 +151,6 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'Invoice not found' },
         { status: 404 }
-      );
-    }
-
-    if (invoice.status !== 'draft' && invoice.status !== 'cancelled') {
-      return NextResponse.json(
-        { error: 'Can only delete draft or cancelled invoices' },
-        { status: 400 }
       );
     }
 

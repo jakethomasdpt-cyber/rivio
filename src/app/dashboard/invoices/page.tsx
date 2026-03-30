@@ -108,6 +108,8 @@ export default function InvoicesPage() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [showNewInvoiceModal, setShowNewInvoiceModal] = useState(false);
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [newInvoiceForm, setNewInvoiceForm] = useState<NewInvoiceForm>(createEmptyInvoiceForm);
   const [openedFromHomeShortcut, setOpenedFromHomeShortcut] = useState(false);
 
@@ -394,21 +396,20 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleDelete = async (invoiceId: string) => {
-    if (!confirm('Are you sure you want to delete this invoice?')) return;
-
+  const handleDeleteConfirm = async () => {
+    if (!invoiceToDelete) return;
+    setIsDeleting(true);
     try {
-      await apiFetch(`/api/invoices/${invoiceId}`, {
-        method: 'DELETE',
-      });
-
-      // Refetch invoices
+      await apiFetch(`/api/invoices/${invoiceToDelete.id}`, { method: 'DELETE' });
       const invoicesData = await apiFetch('/api/invoices');
       setInvoices(invoicesData || []);
-
       setExpandedInvoiceId(null);
+      setInvoiceToDelete(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete invoice');
+      setInvoiceToDelete(null);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -602,7 +603,7 @@ export default function InvoicesPage() {
                     onSend={() => handleSendInvoice(invoice.id)}
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
-                    onDelete={() => handleDelete(invoice.id)}
+                    onDelete={() => setInvoiceToDelete(invoice)}
                   />
                 </div>
 
@@ -612,7 +613,7 @@ export default function InvoicesPage() {
                     onSend={() => handleSendInvoice(invoice.id)}
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
-                    onDelete={() => handleDelete(invoice.id)}
+                    onDelete={() => setInvoiceToDelete(invoice)}
                   />
                 )}
               </div>
@@ -620,6 +621,73 @@ export default function InvoicesPage() {
           </div>
         )}
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!invoiceToDelete}
+        onClose={() => { if (!isDeleting) setInvoiceToDelete(null); }}
+        title="Delete Invoice"
+        size="sm"
+      >
+        {invoiceToDelete && (
+          <div className="space-y-5">
+            <div className="flex items-start gap-4 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/30 dark:bg-red-950/20">
+              <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+              <div>
+                <p className="text-sm font-semibold text-red-900 dark:text-red-300">This cannot be undone</p>
+                <p className="mt-1 text-sm text-red-700 dark:text-red-400">
+                  The invoice, all line items, and payment history will be permanently removed.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white">{invoiceToDelete.invoice_number}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    {(invoiceToDelete as any).clients?.name ?? (invoiceToDelete as any).client_name ?? 'Unknown client'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(invoiceToDelete.total)}</p>
+                  <div className="mt-1">
+                    <StatusBadge status={invoiceToDelete.status} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <Button
+                variant="ghost"
+                onClick={() => setInvoiceToDelete(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Deleting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Delete Invoice
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal isOpen={showNewInvoiceModal} onClose={closeNewInvoiceModal} title="Create New Invoice" size="xl">
         <NewInvoiceFormPanel
