@@ -106,6 +106,18 @@ export async function POST(
         user_id: invoice.user_id,
         portal_token: portalToken,
       },
+      // Propagate invoice_id to the PaymentIntent so payment_intent.succeeded
+      // webhook can also look up and mark the invoice paid (needed for ACH).
+      // Note: payment_intent_data is not compatible with setup_future_usage
+      // on us_bank_account sessions, so we only include it for card payments.
+      ...(!useAch && {
+        payment_intent_data: {
+          metadata: {
+            invoice_id: invoice.id,
+            portal_token: portalToken,
+          },
+        },
+      }),
     });
 
     // Save session ID back to invoice
