@@ -1,6 +1,7 @@
 import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { randomBytes } from 'crypto';
 
 async function getUser() {
   const supabase = await createAuthServerClient();
@@ -48,9 +49,7 @@ export async function POST(request: NextRequest) {
     // Generate or use existing portal token
     let portalToken = invoice.portal_token;
     if (!portalToken) {
-      portalToken = Buffer.from(`${invoice_id}-${Date.now()}`).toString(
-        'base64'
-      );
+      portalToken = randomBytes(32).toString('hex'); // 256-bit cryptographically secure token
     }
 
     // Initialize Stripe
