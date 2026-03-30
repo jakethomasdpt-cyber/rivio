@@ -191,14 +191,16 @@ async function markInvoicePaid({
   const today = now.split('T')[0]; // YYYY-MM-DD for the date column
 
   // Idempotency — check if already paid to avoid double-processing
-  const { data: existing } = await supabase
+  // NOTE: client_name/client_email are on the clients table, not invoices directly.
+  // Join via clients(name, email) and fetch workspace separately via user_id.
+  const { data: existing, error: fetchError } = await supabase
     .from('invoices')
-    .select('id, status, client_name, client_email, invoice_number, total, portal_token, workspace:workspaces(business_name, brand_color, email)')
+    .select('id, status, invoice_number, total, portal_token, user_id, clients(name, email)')
     .eq('id', invoiceId)
     .single();
 
-  if (!existing) {
-    console.error(`[webhook] Invoice ${invoiceId} not found`);
+  if (fetchError || !existing) {
+    console.error(`[webhook] Invoice ${invoiceId} not found:`, fetchError?.message);
     return;
   }
 
@@ -220,9 +222,9 @@ async function markInvoicePaid({
     .update({
       status: 'paid',
       paid_date: today,
-      payment_method: paymentMethodType === 'us_bank_account' ? 'stripe' : 'stripe',
-      stripe_checkout_session_id: stripeSessionId,
-      stripe_payment_intent_id: stripePaymentIntentId,
+      payment_method: 'stripe',
+      stripe_checkout_session_id: stripeSessionId || undefined,
+      stripe_payment_intent_id: stripePaymentIntentId || undefined,
       updated_at: now,
     })
     .eq('id', invoiceId);
@@ -243,21 +245,27 @@ async function markInvoicePaid({
   console.log(`[webhook] Invoice ${invoiceId} marked paid via ${pmLabel}`);
 
   // Send payment confirmation email to client
-  const clientEmail = existing.client_email;
+  const clientData = Array.isArray(existing.clients) ? existing.clients[0] : existing.clients;
+  const clientEmail = (clientData as any)?.email;
+  const clientName = (clientData as any)?.name;
+
   if (!clientEmail) {
     console.log('[webhook] No client email — skipping confirmation email');
     return;
   }
 
-  const workspace = Array.isArray(existing.workspace)
-    ? existing.workspace[0]
-    : existing.workspace;
+  // Fetch workspace for branding (separate query since no direct FK invoices→workspaces)
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('business_name, brand_color, email')
+    .eq('user_id', existing.user_id)
+    .single();
 
-  const businessName = (workspace as any)?.business_name || 'Physical Therapy 365';
-  const brandColor = /^#[0-9A-Fa-f]{6}$/.test((workspace as any)?.brand_color || '')
-    ? (workspace as any).brand_color
+  const businessName = workspace?.business_name || 'Physical Therapy 365';
+  const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '')
+    ? workspace!.brand_color!
     : '#2563eb';
-  const replyEmail = (workspace as any)?.email || 'jakethomasdpt@gmail.com';
+  const replyEmail = workspace?.email || 'jakethomasdpt@gmail.com';
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://invoice.physicaltherapy365.com';
   const portalUrl = `${appUrl}/portal/${existing.portal_token}`;
 
@@ -271,7 +279,7 @@ async function markInvoicePaid({
     html: generatePaymentConfirmationEmail({
       businessName,
       brandColor,
-      clientName: existing.client_name || 'there',
+      clientName: clientName || 'there',
       invoiceNumber: existing.invoice_number,
       total: existing.total,
       paidDate: formatDate(today),
