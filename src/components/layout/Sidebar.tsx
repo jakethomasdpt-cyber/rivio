@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, FileText, Landmark, Settings, Sun, Moon, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Landmark, Settings, Sun, Moon, ChevronLeft, ChevronRight, Zap, Car } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useThemeContext } from './ThemeProvider';
 
@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Clients', icon: Users, href: '/dashboard/clients' },
   { label: 'Invoices', icon: FileText, href: '/dashboard/invoices' },
   { label: 'Finance', icon: Landmark, href: '/dashboard/finance' },
+  { label: 'Mileage', icon: Car, href: '/dashboard/mileage' },
   { label: 'Settings', icon: Settings, href: '/dashboard/settings' },
 ];
 
