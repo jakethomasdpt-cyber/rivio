@@ -102,8 +102,9 @@ export async function GET(
 
     // ── Header: brand bar ──────────────────────────────────────────────
     doc
+      .save()
       .rect(0, 0, 612, 90)
-      .fill(brandRgb);
+      .fill(brandColor);
 
     doc
       .font('Helvetica-Bold')
@@ -114,8 +115,10 @@ export async function GET(
     doc
       .font('Helvetica')
       .fontSize(10)
-      .fillColor('rgba(255,255,255,0.7)' as any)
-      .text('INVOICE', 400, 28, { width: 162, align: 'right' });
+      .fillColor('#ffffff')
+      .opacity(0.7)
+      .text('INVOICE', 400, 28, { width: 162, align: 'right' })
+      .opacity(1);
 
     doc
       .font('Helvetica-Bold')
@@ -210,22 +213,22 @@ export async function GET(
     y = Math.max(y, rightY) + 20;
 
     // Date boxes
-    doc.rect(50, y, 160, 44).fill('#f8fafc').stroke('#e2e8f0');
+    doc.rect(50, y, 160, 44).fillAndStroke('#f8fafc', '#e2e8f0');
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#94a3b8')
       .text('INVOICE DATE', 60, y + 8);
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#1e293b')
       .text(formatDate(invoice.created_at), 60, y + 22);
 
-    doc.rect(220, y, 160, 44).fill('#f8fafc').stroke('#e2e8f0');
+    doc.rect(220, y, 160, 44).fillAndStroke('#f8fafc', '#e2e8f0');
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#94a3b8')
       .text('DUE DATE', 230, y + 8);
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#1e293b')
       .text(formatDate(invoice.due_date), 230, y + 22);
 
-    doc.rect(390, y, 172, 44).fill('#f8fafc').stroke('#e2e8f0');
+    doc.rect(390, y, 172, 44).fillAndStroke('#f8fafc', '#e2e8f0');
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#94a3b8')
       .text('AMOUNT DUE', 400, y + 8);
-    doc.font('Helvetica-Bold').fontSize(14).fillColor(brandRgb)
+    doc.font('Helvetica-Bold').fontSize(14).fillColor(brandColor)
       .text(formatCurrency(invoice.total), 400, y + 20);
 
     y += 64;
@@ -316,7 +319,7 @@ export async function GET(
 
     doc.font('Helvetica-Bold').fontSize(12).fillColor('#1e293b')
       .text('Total Due', totalsX, y);
-    doc.font('Helvetica-Bold').fontSize(14).fillColor(brandRgb)
+    doc.font('Helvetica-Bold').fontSize(14).fillColor(brandColor)
       .text(formatCurrency(invoice.total), colAmount - 10, y, { width: 82, align: 'right' });
 
     y += 30;
