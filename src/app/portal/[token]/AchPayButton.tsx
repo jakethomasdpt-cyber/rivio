@@ -6,9 +6,10 @@ import { formatCurrency } from '@/lib/utils';
 interface AchPayButtonProps {
   portalToken: string;
   total: number;
+  hasSurcharge?: boolean;
 }
 
-export default function AchPayButton({ portalToken, total }: AchPayButtonProps) {
+export default function AchPayButton({ portalToken, total, hasSurcharge }: AchPayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +38,7 @@ export default function AchPayButton({ portalToken, total }: AchPayButtonProps) 
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+    <div className="rounded-xl border-2 border-emerald-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-emerald-800 dark:bg-slate-800">
       <div className="flex items-start gap-4">
         <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950">
           <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,10 +46,22 @@ export default function AchPayButton({ portalToken, total }: AchPayButtonProps) 
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 dark:text-slate-100">Bank Transfer (ACH)</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Bank Transfer (ACH)</p>
+            {hasSurcharge && (
+              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                No fee
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             Connect your bank account via Stripe · settles in 3–5 days
           </p>
+          {hasSurcharge && (
+            <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+              Save money — no processing fee on bank transfers
+            </p>
+          )}
           {error && (
             <p className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
           )}

@@ -9,6 +9,7 @@ export interface Client {
   state?: string;
   zip?: string;
   notes?: string;
+  stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +49,9 @@ export interface Workspace {
   zelle_phone?: string;
   brand_color?: string;
   logo_url?: string;
+  card_surcharge_rate?: number;
+  surcharge_enabled?: boolean;
+  surcharge_label?: string;
 }
 
 // Invoice type
@@ -72,6 +76,7 @@ export interface Invoice {
   internal_notes?: string;
   portal_token: string;
   stripe_payment_intent_id?: string;
+  surcharge_amount?: number;
   reminder_enabled: boolean;
   created_at: string;
   updated_at: string;

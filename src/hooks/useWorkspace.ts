@@ -21,6 +21,9 @@ export interface Workspace {
   website: string | null;
   invoice_footer: string | null;
   tax_rate_default: number | null;
+  card_surcharge_rate: number | null;
+  surcharge_enabled: boolean | null;
+  surcharge_label: string | null;
 }
 
 export interface User {

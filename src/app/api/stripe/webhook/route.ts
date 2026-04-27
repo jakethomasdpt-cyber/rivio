@@ -418,6 +418,33 @@ export async function POST(request: NextRequest) {
         stripePaymentIntentId: session.payment_intent as string | null,
         paymentMethodType,
       });
+
+      // Ensure stripe_customer_id is saved to the client record
+      // (backup for the checkout endpoint's create-customer flow)
+      if (session.customer) {
+        const supabase = createServerSupabaseClient();
+        const { data: inv } = await supabase
+          .from('invoices')
+          .select('client_id')
+          .eq('id', invoiceId)
+          .single();
+
+        if (inv?.client_id) {
+          const { data: client } = await supabase
+            .from('clients')
+            .select('stripe_customer_id')
+            .eq('id', inv.client_id)
+            .single();
+
+          if (client && !client.stripe_customer_id) {
+            await supabase
+              .from('clients')
+              .update({ stripe_customer_id: String(session.customer) })
+              .eq('id', inv.client_id);
+            console.log(`[webhook] Saved stripe_customer_id ${session.customer} to client ${inv.client_id}`);
+          }
+        }
+      }
     }
 
     // ── payment_intent.succeeded ────────────────────────────────────────────

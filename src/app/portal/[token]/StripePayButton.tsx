@@ -3,14 +3,25 @@
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
 
+interface SurchargeInfo {
+  enabled: boolean;
+  rate: number;
+  label: string;
+  amount: number;
+}
+
 interface StripePayButtonProps {
   portalToken: string;
   total: number;
+  surcharge?: SurchargeInfo;
 }
 
-export default function StripePayButton({ portalToken, total }: StripePayButtonProps) {
+export default function StripePayButton({ portalToken, total, surcharge }: StripePayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const hasSurcharge = surcharge?.enabled && surcharge.amount > 0;
+  const totalWithSurcharge = hasSurcharge ? total + surcharge.amount : total;
 
   async function handlePay() {
     setLoading(true);
@@ -45,10 +56,22 @@ export default function StripePayButton({ portalToken, total }: StripePayButtonP
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 dark:text-slate-100">Credit / Debit Card</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Credit / Debit Card</p>
+            {hasSurcharge && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                +{surcharge.rate}% fee
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             Visa, Mastercard, Amex — secured by Stripe
           </p>
+          {hasSurcharge && (
+            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+              {surcharge.label}: {formatCurrency(surcharge.amount)} · Total: {formatCurrency(totalWithSurcharge)}
+            </p>
+          )}
           {error && (
             <p className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
           )}
@@ -67,7 +90,7 @@ export default function StripePayButton({ portalToken, total }: StripePayButtonP
               Processing…
             </>
           ) : (
-            <>Pay {formatCurrency(total)}</>
+            <>Pay {formatCurrency(hasSurcharge ? totalWithSurcharge : total)}</>
           )}
         </button>
       </div>

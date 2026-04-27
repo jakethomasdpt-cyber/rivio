@@ -6,6 +6,7 @@ import StripePayButton from './StripePayButton';
 import VenmoPayButton from './VenmoPayButton';
 import AchPayButton from './AchPayButton';
 import WalletPayButton from './WalletPayButton';
+import SavedAchPayButton from './SavedAchPayButton';
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -342,19 +343,36 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                 All payments are secure and encrypted.
               </p>
               <div className="space-y-3">
-                {/* Credit / Debit Card via Stripe */}
+                {/* Saved Bank Account (one-click ACH) — shown first if available */}
+                {(invoice as any).saved_payment_methods?.length > 0 && (
+                  <SavedAchPayButton
+                    portalToken={token}
+                    total={invoice.total}
+                    savedMethods={(invoice as any).saved_payment_methods}
+                  />
+                )}
+
+                {/* ACH / Bank Transfer via Stripe — shown with "No fee" badge */}
+                {(invoice as any).accept_ach === true && (
+                  <AchPayButton
+                    portalToken={token}
+                    total={invoice.total}
+                    hasSurcharge={(invoice as any).surcharge?.enabled || false}
+                  />
+                )}
+
+                {/* Credit / Debit Card via Stripe — with surcharge info */}
                 {(invoice as any).accept_credit_card !== false && (
-                  <StripePayButton portalToken={token} total={invoice.total} />
+                  <StripePayButton
+                    portalToken={token}
+                    total={invoice.total}
+                    surcharge={(invoice as any).surcharge}
+                  />
                 )}
 
                 {/* Apple Pay / Google Pay */}
                 {(invoice as any).accept_wallet === true && (
                   <WalletPayButton portalToken={token} total={invoice.total} />
-                )}
-
-                {/* ACH / Bank Transfer via Stripe */}
-                {(invoice as any).accept_ach === true && (
-                  <AchPayButton portalToken={token} total={invoice.total} />
                 )}
 
                 {/* Venmo */}

@@ -5,6 +5,11 @@ import Stripe from 'stripe';
 /**
  * Public Stripe checkout endpoint — authenticated by portal token, not user session.
  * Called by the client-facing payment portal (no login required).
+ *
+ * Supports:
+ *  - Credit card surcharge (configurable per workspace)
+ *  - Stripe Customer creation/reuse for saved payment methods
+ *  - ACH with automatic bank account saving via Financial Connections
  */
 export async function POST(
   request: NextRequest,
@@ -20,7 +25,7 @@ export async function POST(
     // Look up invoice by portal token — no user session needed
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
-      .select('*')
+      .select('*, clients(id, name, email, stripe_customer_id)')
       .eq('portal_token', portalToken)
       .single();
 
@@ -60,6 +65,13 @@ export async function POST(
       );
     }
 
+    // Get workspace settings for surcharge config
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('card_surcharge_rate, surcharge_enabled, surcharge_label')
+      .eq('user_id', invoice.user_id)
+      .single();
+
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
       apiVersion: '2026-03-25.dahlia' as const,
     });
@@ -69,61 +81,123 @@ export async function POST(
     // Determine payment method types
     const useAch = payment_method === 'ach' && invoice.accept_ach === true;
     const useWallet = payment_method === 'wallet' && invoice.accept_wallet === true;
+    const useCard = !useAch; // card or wallet both use 'card' type
 
-    // Stripe Checkout automatically presents Apple Pay / Google Pay when 'card'
-    // is included — no need to list them separately. For the wallet flow we use
-    // the same 'card' method type but omit other options so the Stripe-hosted
-    // page renders the wallet buttons prominently.
     const paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = useAch
       ? ['us_bank_account']
       : ['card'];
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: paymentMethods,
-      mode: 'payment',
-      ...(useAch && {
-        payment_method_options: {
-          us_bank_account: {
-            financial_connections: { permissions: ['payment_method'] },
-          },
+    // ── Stripe Customer (get or create) ──────────────────────────────────
+    // Reuse existing Stripe Customer for returning clients, or create one.
+    // This enables saved payment methods for future invoices.
+    const client = Array.isArray(invoice.clients) ? invoice.clients[0] : invoice.clients;
+    let stripeCustomerId = client?.stripe_customer_id || null;
+
+    if (!stripeCustomerId && client) {
+      // Create a new Stripe Customer
+      const customer = await stripe.customers.create({
+        name: client.name || undefined,
+        email: client.email || undefined,
+        metadata: {
+          pt365_client_id: client.id,
+          invoice_user_id: invoice.user_id,
         },
-      }),
-      line_items: lineItems.map((item) => ({
+      });
+      stripeCustomerId = customer.id;
+
+      // Save Stripe Customer ID back to client record
+      await supabase
+        .from('clients')
+        .update({ stripe_customer_id: customer.id })
+        .eq('id', client.id);
+    }
+
+    // ── Build Stripe line items ──────────────────────────────────────────
+    const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = lineItems.map((item) => ({
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: item.service,
+          description: item.provider ? `Provider: ${item.provider}` : undefined,
+        },
+        unit_amount: Math.round(Number(item.rate) * 100),
+      },
+      quantity: Number(item.quantity),
+    }));
+
+    // ── Credit Card Surcharge ────────────────────────────────────────────
+    // Only applied to card payments when surcharge is enabled
+    let surchargeAmount = 0;
+    const surchargeEnabled = workspace?.surcharge_enabled !== false;
+    const surchargeRate = Number(workspace?.card_surcharge_rate) || 0;
+    const surchargeLabel = workspace?.surcharge_label || 'Processing fee';
+
+    if (useCard && surchargeEnabled && surchargeRate > 0) {
+      surchargeAmount = Math.round(invoice.total * (surchargeRate / 100) * 100) / 100;
+
+      stripeLineItems.push({
         price_data: {
           currency: 'usd',
           product_data: {
-            name: item.service,
-            description: item.provider ? `Provider: ${item.provider}` : undefined,
+            name: surchargeLabel,
+            description: `${surchargeRate}% card processing fee`,
           },
-          unit_amount: Math.round(Number(item.rate) * 100),
+          unit_amount: Math.round(surchargeAmount * 100),
         },
-        quantity: Number(item.quantity),
-      })),
+        quantity: 1,
+      });
+    }
+
+    // ── Create Stripe Checkout Session ───────────────────────────────────
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      payment_method_types: paymentMethods,
+      mode: 'payment',
+      customer: stripeCustomerId || undefined,
+      line_items: stripeLineItems,
       success_url: `${appUrl}/portal/${portalToken}?payment=success`,
       cancel_url: `${appUrl}/portal/${portalToken}`,
       metadata: {
         invoice_id: invoice.id,
         user_id: invoice.user_id,
         portal_token: portalToken,
+        surcharge_amount: String(surchargeAmount),
       },
-      // Propagate invoice_id to the PaymentIntent so payment_intent.succeeded
-      // webhook can also look up and mark the invoice paid (needed for ACH).
-      // Note: payment_intent_data is not compatible with setup_future_usage
-      // on us_bank_account sessions, so we only include it for card payments.
-      ...(!useAch && {
-        payment_intent_data: {
-          metadata: {
-            invoice_id: invoice.id,
-            portal_token: portalToken,
-          },
-        },
-      }),
-    });
+    };
 
-    // Save session ID back to invoice
+    // ACH-specific options: save bank account for future use
+    if (useAch) {
+      sessionParams.payment_method_options = {
+        us_bank_account: {
+          financial_connections: { permissions: ['payment_method'] },
+        },
+      };
+    }
+
+    // For card payments: propagate invoice_id to PaymentIntent
+    // (not compatible with setup_future_usage on ACH sessions)
+    if (!useAch) {
+      sessionParams.payment_intent_data = {
+        metadata: {
+          invoice_id: invoice.id,
+          portal_token: portalToken,
+          surcharge_amount: String(surchargeAmount),
+        },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    // Save session ID + surcharge amount back to invoice
+    const updatePayload: Record<string, any> = {
+      stripe_checkout_session_id: session.id,
+    };
+    if (surchargeAmount > 0) {
+      updatePayload.surcharge_amount = surchargeAmount;
+    }
+
     await supabase
       .from('invoices')
-      .update({ stripe_checkout_session_id: session.id })
+      .update(updatePayload)
       .eq('id', invoice.id);
 
     return NextResponse.json({ url: session.url });

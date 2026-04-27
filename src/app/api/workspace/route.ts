@@ -36,7 +36,8 @@ export async function PUT(request: NextRequest) {
     const {
       business_name, owner_name, email, phone, address, city, state, zip,
       website, logo_url, brand_color, venmo_handle, zelle_phone,
-      invoice_prefix, invoice_footer, tax_rate_default
+      invoice_prefix, invoice_footer, tax_rate_default,
+      card_surcharge_rate, surcharge_enabled, surcharge_label,
     } = body;
 
     const db = createServerSupabaseClient();
@@ -46,6 +47,7 @@ export async function PUT(request: NextRequest) {
         business_name, owner_name, email, phone, address, city, state, zip,
         website, logo_url, brand_color, venmo_handle, zelle_phone,
         invoice_prefix, invoice_footer, tax_rate_default,
+        card_surcharge_rate, surcharge_enabled, surcharge_label,
       })
       .eq('user_id', user.id)
       .select()

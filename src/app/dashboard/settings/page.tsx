@@ -19,6 +19,8 @@ import {
   LogOut,
   Check,
   AlertCircle,
+  CreditCard,
+  Percent,
 } from 'lucide-react';
 
 interface FormData {
@@ -42,6 +44,9 @@ interface FormData {
   reminderDaysBefore: string;
   reminderDaysAfter: string;
   brandColor?: string;
+  surchargeEnabled: boolean;
+  cardSurchargeRate: string;
+  surchargeLabel: string;
 }
 
 const initialFormData: FormData = {
@@ -65,6 +70,9 @@ const initialFormData: FormData = {
   reminderDaysBefore: '3',
   reminderDaysAfter: '3',
   brandColor: '#004a99',
+  surchargeEnabled: true,
+  cardSurchargeRate: '3.0',
+  surchargeLabel: 'Processing fee',
 };
 
 export default function SettingsPage() {
@@ -92,6 +100,9 @@ export default function SettingsPage() {
         zellePhone: workspace.zelle_phone || '',
         invoiceNumberPrefix: workspace.invoice_prefix || 'INV',
         defaultTaxRate: workspace.tax_rate_default ? String(workspace.tax_rate_default) : '0',
+        surchargeEnabled: workspace.surcharge_enabled !== false,
+        cardSurchargeRate: workspace.card_surcharge_rate != null ? String(workspace.card_surcharge_rate) : '3.0',
+        surchargeLabel: workspace.surcharge_label || 'Processing fee',
       }));
     }
   }, [workspace]);
@@ -132,6 +143,9 @@ export default function SettingsPage() {
           invoice_prefix: formData.invoiceNumberPrefix,
           tax_rate_default: parseFloat(formData.defaultTaxRate) || 0,
           brand_color: formData.brandColor,
+          card_surcharge_rate: parseFloat(formData.cardSurchargeRate) || 0,
+          surcharge_enabled: formData.surchargeEnabled,
+          surcharge_label: formData.surchargeLabel || 'Processing fee',
         }),
       });
 
@@ -456,6 +470,75 @@ export default function SettingsPage() {
                 onChange={handleInputChange}
                 placeholder="(555) 123-4567"
               />
+            </div>
+
+            {/* Credit Card Surcharge Section */}
+            <div className="border-b border-slate-200 dark:border-slate-700 pb-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/30">
+                  <Percent className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                    Credit Card Surcharge
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Pass processing fees to customers who pay by card
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 ml-[52px]">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="surchargeEnabled"
+                    name="surchargeEnabled"
+                    checked={formData.surchargeEnabled}
+                    onChange={handleInputChange}
+                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label
+                    htmlFor="surchargeEnabled"
+                    className="text-sm font-medium text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    Enable credit card surcharge
+                  </label>
+                </div>
+
+                {formData.surchargeEnabled && (
+                  <div className="space-y-4 pl-7">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Input
+                        label="Surcharge Rate (%)"
+                        name="cardSurchargeRate"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="10"
+                        value={formData.cardSurchargeRate}
+                        onChange={handleInputChange}
+                        placeholder="3.0"
+                      />
+                      <Input
+                        label="Fee Label (shown to customer)"
+                        name="surchargeLabel"
+                        value={formData.surchargeLabel}
+                        onChange={handleInputChange}
+                        placeholder="Processing fee"
+                      />
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-lg">
+                      <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        A {formData.cardSurchargeRate}% surcharge will be added to credit card payments.
+                        ACH bank transfers remain free for your customers.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Default Payment Terms */}
