@@ -18,6 +18,7 @@ import {
   FileText,
   MoreVertical,
   UserRound,
+  Download,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -54,6 +55,17 @@ interface NewInvoiceForm {
   accept_zelle: boolean;
   accept_ach: boolean;
   accept_wallet: boolean;
+}
+
+interface ServiceSuggestion {
+  service: string;
+  rate: number;
+  quantity: number;
+  provider: string;
+  description: string | null;
+  client_name: string | null;
+  used_count: number;
+  last_used: string;
 }
 
 type FilterTab = 'all' | 'draft' | 'sent' | 'paid' | 'overdue' | 'viewed';
@@ -112,19 +124,22 @@ export default function InvoicesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [newInvoiceForm, setNewInvoiceForm] = useState<NewInvoiceForm>(createEmptyInvoiceForm);
   const [openedFromHomeShortcut, setOpenedFromHomeShortcut] = useState(false);
+  const [serviceSuggestions, setServiceSuggestions] = useState<ServiceSuggestion[]>([]);
 
-  // Load invoices and clients from API on mount
+  // Load invoices, clients, and service suggestions from API on mount
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         setError(null);
-        const [invoicesData, clientsData] = await Promise.all([
+        const [invoicesData, clientsData, servicesData] = await Promise.all([
           apiFetch('/api/invoices'),
           apiFetch('/api/clients'),
+          apiFetch('/api/services').catch(() => []),
         ]);
         setInvoices(invoicesData || []);
         setClients(clientsData || []);
+        setServiceSuggestions(servicesData || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
       } finally {
@@ -413,6 +428,27 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleDownloadPdf = async (invoiceId: string, invoiceNumber: string) => {
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/pdf`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Invoice-${invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download PDF');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
@@ -604,6 +640,7 @@ export default function InvoicesPage() {
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
                     onDelete={() => setInvoiceToDelete(invoice)}
+                    onDownload={() => handleDownloadPdf(invoice.id, invoice.invoice_number)}
                   />
                 </div>
 
@@ -614,6 +651,7 @@ export default function InvoicesPage() {
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
                     onDelete={() => setInvoiceToDelete(invoice)}
+                    onDownload={() => handleDownloadPdf(invoice.id, invoice.invoice_number)}
                   />
                 )}
               </div>
@@ -709,6 +747,7 @@ export default function InvoicesPage() {
           workspaceVenmo={workspace?.venmo_handle || ''}
           workspaceZelle={workspace?.zelle_phone || ''}
           workspaceStripe={true}
+          serviceSuggestions={serviceSuggestions}
         />
       </Modal>
     </div>
@@ -745,6 +784,7 @@ interface InvoiceQuickActionsProps {
   onMarkPaid: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onDownload: () => void;
 }
 
 function InvoiceQuickActions({
@@ -753,6 +793,7 @@ function InvoiceQuickActions({
   onMarkPaid,
   onDuplicate,
   onDelete,
+  onDownload,
 }: InvoiceQuickActionsProps) {
   const [showMenu, setShowMenu] = useState(false);
 
@@ -800,6 +841,17 @@ function InvoiceQuickActions({
             <button
               onClick={(event) => {
                 event.stopPropagation();
+                onDownload();
+                setShowMenu(false);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <Download className="h-4 w-4" />
+              Download PDF
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
                 onDuplicate();
                 setShowMenu(false);
               }}
@@ -832,12 +884,14 @@ function InvoiceDetailView({
   onMarkPaid,
   onDuplicate,
   onDelete,
+  onDownload,
 }: {
   invoice: Invoice;
   onSend: () => void;
   onMarkPaid: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onDownload: () => void;
 }) {
   const daysUntilDue = getDaysUntilDue(invoice.due_date);
   const isOverdue = daysUntilDue < 0 && invoice.status !== 'paid';
@@ -943,6 +997,10 @@ function InvoiceDetailView({
             Mark Paid
           </Button>
         )}
+        <Button onClick={onDownload} size="sm" variant="outline" className="gap-2">
+          <Download className="h-4 w-4" />
+          Download PDF
+        </Button>
         <Button onClick={onDuplicate} size="sm" variant="outline" className="gap-2">
           <Copy className="h-4 w-4" />
           Duplicate
@@ -975,6 +1033,7 @@ function NewInvoiceFormPanel({
   workspaceVenmo,
   workspaceZelle,
   workspaceStripe,
+  serviceSuggestions,
 }: {
   clients: Client[];
   clientOptions: { value: string; label: string }[];
@@ -994,6 +1053,7 @@ function NewInvoiceFormPanel({
   workspaceVenmo: string;
   workspaceZelle: string;
   workspaceStripe: boolean;
+  serviceSuggestions: ServiceSuggestion[];
 }) {
   const missingRequiredFields =
     !form.client_name.trim() ||
@@ -1001,6 +1061,28 @@ function NewInvoiceFormPanel({
     form.line_items.some((item) => !item.service.trim());
   const missingEmailForSend = !form.client_email.trim();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeServiceIndex, setActiveServiceIndex] = useState<number | null>(null);
+  const [serviceDropdownIndex, setServiceDropdownIndex] = useState<number | null>(null);
+
+  const getFilteredSuggestions = (query: string): ServiceSuggestion[] => {
+    if (!query || query.length < 1) return serviceSuggestions.slice(0, 8);
+    const lower = query.toLowerCase();
+    return serviceSuggestions
+      .filter((s) => s.service.toLowerCase().includes(lower))
+      .slice(0, 8);
+  };
+
+  const applyServiceSuggestion = (index: number, suggestion: ServiceSuggestion) => {
+    onUpdateLineItem(index, 'service', suggestion.service);
+    onUpdateLineItem(index, 'rate', suggestion.rate);
+    if (suggestion.provider) {
+      onUpdateLineItem(index, 'provider', suggestion.provider);
+    }
+    if (suggestion.quantity > 0) {
+      onUpdateLineItem(index, 'quantity', suggestion.quantity);
+    }
+    setServiceDropdownIndex(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -1059,12 +1141,66 @@ function NewInvoiceFormPanel({
           {form.line_items.map((item, index) => (
             <div key={item.id} className="space-y-3 rounded-lg bg-slate-50 p-4 dark:bg-slate-700/20">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Input
-                  label="Service"
-                  placeholder="Physical therapy session"
-                  value={item.service}
-                  onChange={(event) => onUpdateLineItem(index, 'service', event.target.value)}
-                />
+                <div className="relative">
+                  <Input
+                    label="Service"
+                    placeholder="Physical therapy session"
+                    value={item.service}
+                    onChange={(event) => {
+                      onUpdateLineItem(index, 'service', event.target.value);
+                      setServiceDropdownIndex(index);
+                    }}
+                    onFocus={() => {
+                      setActiveServiceIndex(index);
+                      setServiceDropdownIndex(index);
+                    }}
+                    onBlur={() => {
+                      // Delay to allow click on suggestion
+                      setTimeout(() => setServiceDropdownIndex(null), 200);
+                    }}
+                    autoComplete="off"
+                  />
+                  {serviceDropdownIndex === index && serviceSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                      {getFilteredSuggestions(item.service).map((suggestion, sIdx) => {
+                        const isMatch = item.service.length > 0 &&
+                          suggestion.service.toLowerCase().includes(item.service.toLowerCase());
+                        return (
+                          <button
+                            key={`${suggestion.service}-${sIdx}`}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              applyServiceSuggestion(index, suggestion);
+                            }}
+                            className={cn(
+                              'flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20',
+                              isMatch && 'bg-blue-50/50 dark:bg-blue-900/10'
+                            )}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
+                                {suggestion.service}
+                              </p>
+                              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                                {suggestion.provider}{suggestion.client_name ? ` · ${suggestion.client_name}` : ''}
+                                {suggestion.used_count > 1 ? ` · used ${suggestion.used_count}×` : ''}
+                              </p>
+                            </div>
+                            <span className="flex-shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                              {formatCurrency(suggestion.rate)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {getFilteredSuggestions(item.service).length === 0 && item.service.length > 0 && (
+                        <div className="px-3 py-2.5 text-sm text-slate-500 dark:text-slate-400">
+                          No matching services found
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <Input
                   label="Service Date"
                   type="date"

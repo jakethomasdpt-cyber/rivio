@@ -293,6 +293,66 @@ async function markInvoicePaid({
   } else {
     console.log(`[webhook] Confirmation email sent to ${clientEmail}`);
   }
+
+  // Also send payment notification to business email
+  try {
+    const bizEmail = workspace?.email || replyEmail;
+    await resend.emails.send({
+      from: `${businessName} <invoices@physicaltherapy365.com>`,
+      to: [bizEmail],
+      subject: `Payment received — ${existing.invoice_number} (${formatCurrency(existing.total)})`,
+      html: `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+      <tr>
+        <td style="background:${brandColor};border-radius:12px 12px 0 0;padding:24px 32px;">
+          <p style="margin:0;font-size:18px;font-weight:700;color:#fff;">${escapeHtml(businessName)}</p>
+          <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.7);">Payment received</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#fff;padding:28px 32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+          <div style="text-align:center;margin-bottom:20px;">
+            <div style="display:inline-block;width:56px;height:56px;background:#dcfce7;border-radius:50%;line-height:56px;font-size:28px;">&#10003;</div>
+          </div>
+          <p style="margin:0 0 16px;font-size:15px;color:#1e293b;text-align:center;">
+            Invoice <strong>${escapeHtml(existing.invoice_number)}</strong> has been paid via <strong>${escapeHtml(pmLabel)}</strong>!
+          </p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <tr><td style="padding:16px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Client</td>
+                  <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${escapeHtml(clientName || 'N/A')}</td>
+                </tr>
+                <tr>
+                  <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Payment</td>
+                  <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${escapeHtml(pmLabel)}</td>
+                </tr>
+                <tr>
+                  <td style="font-size:14px;font-weight:700;color:#1e293b;padding-top:8px;border-top:1px solid #e2e8f0;">Amount</td>
+                  <td align="right" style="font-size:18px;font-weight:700;color:#16a34a;padding-top:8px;border-top:1px solid #e2e8f0;">${formatCurrency(existing.total)}</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+          <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;text-align:center;">Automated payment confirmation for your records.</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`,
+    });
+    console.log(`[webhook] Business payment notification sent to ${bizEmail}`);
+  } catch (bizErr) {
+    console.error('[webhook] Failed to send business payment notification:', bizErr);
+  }
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────

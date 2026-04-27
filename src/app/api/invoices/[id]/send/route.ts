@@ -401,6 +401,68 @@ export async function POST(
       );
     }
 
+    // Send a copy to the business email
+    const businessEmail = workspace?.email || 'jakethomasdpt@gmail.com';
+    const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '') ? workspace!.brand_color! : '#004a99';
+    try {
+      await resend.emails.send({
+        from: `${businessName} <invoices@physicaltherapy365.com>`,
+        to: businessEmail,
+        subject: `[Copy] Invoice ${invoice.invoice_number} sent to ${escapeHtml(invoice.clients?.name || 'client')}`,
+        html: `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+      <tr>
+        <td style="background:${brandColor};border-radius:12px 12px 0 0;padding:24px 32px;">
+          <p style="margin:0;font-size:18px;font-weight:700;color:#fff;">${escapeHtml(businessName)}</p>
+          <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.7);">Invoice sent notification</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#fff;padding:28px 32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+          <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">
+            Invoice <strong>${escapeHtml(invoice.invoice_number)}</strong> has been successfully sent.
+          </p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <tr><td style="padding:16px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Client</td>
+                  <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${escapeHtml(invoice.clients?.name || 'N/A')}</td>
+                </tr>
+                <tr>
+                  <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Email</td>
+                  <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${escapeHtml(clientEmail)}</td>
+                </tr>
+                <tr>
+                  <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Due Date</td>
+                  <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${formatDate(invoice.due_date)}</td>
+                </tr>
+                <tr>
+                  <td style="font-size:14px;font-weight:700;color:#1e293b;padding-top:8px;border-top:1px solid #e2e8f0;">Total</td>
+                  <td align="right" style="font-size:18px;font-weight:700;color:${brandColor};padding-top:8px;border-top:1px solid #e2e8f0;">${formatCurrency(invoice.total)}</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+          <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">This is an automated copy for your records. The client has received their own invoice email with payment links.</p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`,
+      });
+    } catch (bizEmailErr) {
+      // Non-critical — log but don't fail the request
+      console.error('Failed to send business copy email:', bizEmailErr);
+    }
+
     // Update invoice status to sent
     const { error: updateError } = await supabase
       .from('invoices')
