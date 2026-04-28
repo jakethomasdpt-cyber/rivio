@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ['latin'] });
 const manrope = Manrope({ subsets: ['latin'], variable: '--font-headline' });
 
 export const metadata: Metadata = {
-  title: 'Rivio - Invoice smarter. Get paid faster.',
-  description: 'Invoice and payment management for service professionals. Send invoices, accept payments via Stripe, Venmo, or Zelle, and track finances—all in one platform.',
+  title: 'Rivio — PT-first invoicing for physical therapists',
+  description: 'The invoicing app built for physical therapists. White-label your clinic, control processing fees, track mileage, and get paid faster from anywhere.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
