@@ -7,10 +7,13 @@ import {
   verifyHmacSignature,
   type VedaPaymentMethod,
 } from '@/lib/vedaCrypto';
+import {
+  ALLOWED_VEDA_RIVIO_ORGANIZATION_NAME,
+  isPhysicalTherapy365Workspace,
+} from '@/lib/vedaWorkspace';
 
 export { createHmacSignature, mapStripePaymentMethod, verifyHmacSignature };
-
-export const ALLOWED_VEDA_RIVIO_ORGANIZATION_NAME = 'Physical Therapy 365';
+export { ALLOWED_VEDA_RIVIO_ORGANIZATION_NAME, isPhysicalTherapy365Workspace };
 
 export type VedaEventType =
   | 'customer.upserted'
@@ -87,10 +90,6 @@ export function generateInvoiceNumber(prefix = 'VEDA'): string {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const random = crypto.randomInt(0, 100_000).toString().padStart(5, '0');
   return `${prefix}${yy}${mm}-${random}`;
-}
-
-export function isPhysicalTherapy365Workspace(workspaceName: string | null | undefined): boolean {
-  return (workspaceName || '').trim().toLowerCase() === ALLOWED_VEDA_RIVIO_ORGANIZATION_NAME.toLowerCase();
 }
 
 export async function resolveVedaTenant(vedaOrganizationId: string) {
