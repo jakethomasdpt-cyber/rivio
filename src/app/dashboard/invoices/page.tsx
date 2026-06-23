@@ -192,10 +192,13 @@ export default function InvoicesPage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
-        (invoice) =>
-          invoice.invoice_number.toLowerCase().includes(query) ||
-          (invoice.client_name || '').toLowerCase().includes(query) ||
-          (invoice.client_email || '').toLowerCase().includes(query)
+          (invoice) =>
+            invoice.invoice_number.toLowerCase().includes(query) ||
+            (invoice.client_name || '').toLowerCase().includes(query) ||
+            (invoice.client_email || '').toLowerCase().includes(query) ||
+            (invoice.veda_patient_id || '').toLowerCase().includes(query) ||
+            (invoice.veda_invoice_id || '').toLowerCase().includes(query) ||
+            (invoice.veda_organization_id || '').toLowerCase().includes(query)
       );
     }
 
@@ -602,6 +605,12 @@ export default function InvoicesPage() {
                         <p className="text-sm text-slate-600 dark:text-slate-400">
                           {invoice.clients?.name ?? invoice.client_name ?? 'Unknown'}
                         </p>
+                        {invoice.veda_invoice_id && (
+                          <p className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+                            Veda invoice {invoice.veda_invoice_id}
+                            {invoice.veda_patient_id ? ` · Patient ${invoice.veda_patient_id}` : ''}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-6">
@@ -937,6 +946,29 @@ function InvoiceDetailView({
             <p className="text-sm font-medium text-red-900 dark:text-red-200">Overdue</p>
             <p className="text-xs text-red-700 dark:text-red-300">Due date was {Math.abs(daysUntilDue)} days ago</p>
           </div>
+        </div>
+      )}
+
+      {invoice.veda_invoice_id && (
+        <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm dark:border-blue-900/40 dark:bg-blue-950/20 sm:grid-cols-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Veda Org</p>
+            <p className="mt-1 break-all font-medium text-slate-900 dark:text-white">{invoice.veda_organization_id}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Veda Patient</p>
+            <p className="mt-1 break-all font-medium text-slate-900 dark:text-white">{invoice.veda_patient_id}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Veda Invoice</p>
+            <p className="mt-1 break-all font-medium text-slate-900 dark:text-white">{invoice.veda_invoice_id}</p>
+          </div>
+          {invoice.latest_payment_failure && (
+            <div className="sm:col-span-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">Latest Payment Failure</p>
+              <p className="mt-1 text-red-700 dark:text-red-300">{invoice.latest_payment_failure}</p>
+            </div>
+          )}
         </div>
       )}
 

@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Textarea from '@/components/ui/Textarea';
+import Badge from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import {
   Save,
@@ -21,6 +22,14 @@ import {
   AlertCircle,
   CreditCard,
   Percent,
+  Plug,
+  KeyRound,
+  Webhook,
+  Pause,
+  Play,
+  Trash2,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 
 interface FormData {
@@ -47,6 +56,52 @@ interface FormData {
   surchargeEnabled: boolean;
   cardSurchargeRate: string;
   surchargeLabel: string;
+}
+
+interface VedaConnection {
+  veda_organization_id: string;
+  display_name: string;
+  webhook_base_url: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface VedaIntegrationState {
+  isAllowedWorkspace: boolean;
+  workspace: { id: string; business_name: string } | null;
+  connections: VedaConnection[];
+  failedWebhookDeliveries: Array<{
+    id: string;
+    event_id: string;
+    invoice_id: string | null;
+    destination_url: string;
+    status: string;
+    attempt_count: number;
+    response_status: number | null;
+    last_error: string | null;
+    next_retry_at: string | null;
+    updated_at: string;
+  }>;
+  config: {
+    allowedRivioOrganizationName: string;
+    endpoints: Record<string, string>;
+    secrets: {
+      vedaToRivioSharedSecretConfigured: boolean;
+      rivioToVedaWebhookSecretConfigured: boolean;
+      vedaToRivioSharedSecret: string;
+      rivioToVedaWebhookSecret: string;
+    };
+    webhookBaseUrl: string;
+  };
+}
+
+interface VedaConnectionForm {
+  vedaOrganizationId: string;
+  displayName: string;
+  webhookBaseUrl: string;
+  notes: string;
 }
 
 const initialFormData: FormData = {
@@ -82,6 +137,16 @@ export default function SettingsPage() {
   const [showStripeKey, setShowStripeKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [vedaState, setVedaState] = useState<VedaIntegrationState | null>(null);
+  const [vedaForm, setVedaForm] = useState<VedaConnectionForm>({
+    vedaOrganizationId: '',
+    displayName: 'Veda EMR',
+    webhookBaseUrl: '',
+    notes: '',
+  });
+  const [vedaLoading, setVedaLoading] = useState(true);
+  const [vedaSaving, setVedaSaving] = useState(false);
+  const [vedaMessage, setVedaMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Populate form with workspace data when it loads
   useEffect(() => {
@@ -106,6 +171,41 @@ export default function SettingsPage() {
       }));
     }
   }, [workspace]);
+
+  const loadVedaIntegration = async () => {
+    try {
+      setVedaLoading(true);
+      const response = await fetch('/api/settings/integrations/veda');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to load Veda integration');
+      setVedaState(data);
+      const connection = data.connections?.[0];
+      if (connection) {
+        setVedaForm({
+          vedaOrganizationId: connection.veda_organization_id,
+          displayName: connection.display_name || 'Veda EMR',
+          webhookBaseUrl: connection.webhook_base_url || data.config?.webhookBaseUrl || '',
+          notes: connection.notes || '',
+        });
+      } else {
+        setVedaForm((current) => ({
+          ...current,
+          webhookBaseUrl: data.config?.webhookBaseUrl || current.webhookBaseUrl,
+        }));
+      }
+    } catch (error) {
+      setVedaMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to load Veda integration',
+      });
+    } finally {
+      setVedaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadVedaIntegration();
+  }, []);
 
   if (!mounted) {
     return <div className="min-h-screen bg-slate-50 dark:bg-slate-950" />;
@@ -159,6 +259,97 @@ export default function SettingsPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const showVedaMessage = (type: 'success' | 'error', text: string) => {
+    setVedaMessage({ type, text });
+    setTimeout(() => setVedaMessage(null), 4000);
+  };
+
+  const handleVedaFormChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setVedaForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const saveVedaConnection = async () => {
+    try {
+      setVedaSaving(true);
+      const hasConnection = Boolean(vedaState?.connections?.[0]);
+      const response = await fetch('/api/settings/integrations/veda', {
+        method: hasConnection ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vedaOrganizationId: vedaForm.vedaOrganizationId,
+          displayName: vedaForm.displayName,
+          webhookBaseUrl: vedaForm.webhookBaseUrl,
+          notes: vedaForm.notes,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save Veda connection');
+      setVedaState(data);
+      showVedaMessage('success', hasConnection ? 'Veda connection updated.' : 'Veda connection created.');
+    } catch (error) {
+      showVedaMessage('error', error instanceof Error ? error.message : 'Failed to save Veda connection');
+    } finally {
+      setVedaSaving(false);
+    }
+  };
+
+  const toggleVedaConnection = async (connection: VedaConnection) => {
+    try {
+      setVedaSaving(true);
+      const response = await fetch('/api/settings/integrations/veda', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vedaOrganizationId: connection.veda_organization_id,
+          isActive: !connection.is_active,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update Veda connection');
+      setVedaState(data);
+      showVedaMessage('success', connection.is_active ? 'Veda connection paused.' : 'Veda connection resumed.');
+    } catch (error) {
+      showVedaMessage('error', error instanceof Error ? error.message : 'Failed to update Veda connection');
+    } finally {
+      setVedaSaving(false);
+    }
+  };
+
+  const deleteVedaConnection = async (connection: VedaConnection) => {
+    const confirmed = window.confirm(`Delete the Veda connection for ${connection.display_name}?`);
+    if (!confirmed) return;
+
+    try {
+      setVedaSaving(true);
+      const response = await fetch(
+        `/api/settings/integrations/veda?vedaOrganizationId=${encodeURIComponent(connection.veda_organization_id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to delete Veda connection');
+      setVedaState(data);
+      setVedaForm({
+        vedaOrganizationId: '',
+        displayName: 'Veda EMR',
+        webhookBaseUrl: data.config?.webhookBaseUrl || '',
+        notes: '',
+      });
+      showVedaMessage('success', 'Veda connection deleted.');
+    } catch (error) {
+      showVedaMessage('error', error instanceof Error ? error.message : 'Failed to delete Veda connection');
+    } finally {
+      setVedaSaving(false);
+    }
+  };
+
+  const copyText = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    showVedaMessage('success', 'Copied.');
   };
 
   const brandColorPresets = [
@@ -549,6 +740,246 @@ export default function SettingsPage() {
               onChange={handleInputChange}
               options={paymentTermsOptions}
             />
+          </div>
+        </Card>
+
+        {/* API Integrations */}
+        <Card>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                API & Integrations
+              </h2>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">
+                Manage server-to-server connections, webhook delivery, and API access.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadVedaIntegration} disabled={vedaLoading} className="gap-2">
+              <RefreshCw className={cn('h-4 w-4', vedaLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+          </div>
+
+          {vedaMessage && (
+            <div
+              className={cn(
+                'mb-5 flex items-center gap-3 rounded-lg border p-3 text-sm font-medium',
+                vedaMessage.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300'
+                  : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'
+              )}
+            >
+              {vedaMessage.type === 'success' ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+              {vedaMessage.text}
+            </div>
+          )}
+
+          <div className="space-y-6">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950/40">
+                    <Plug className="h-5 w-5 text-blue-700 dark:text-blue-300" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Veda EMR</h3>
+                      {vedaState?.connections?.[0]?.is_active ? (
+                        <Badge variant="success">Active</Badge>
+                      ) : vedaState?.connections?.[0] ? (
+                        <Badge variant="warning">Paused</Badge>
+                      ) : (
+                        <Badge variant="default">Not connected</Badge>
+                      )}
+                      {vedaState?.isAllowedWorkspace ? (
+                        <Badge variant="info">Physical Therapy 365 only</Badge>
+                      ) : (
+                        <Badge variant="danger">Wrong workspace</Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                      This integration is locked to the Physical Therapy 365 Rivio organization.
+                    </p>
+                  </div>
+                </div>
+
+                {vedaState?.connections?.[0] && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleVedaConnection(vedaState.connections[0])}
+                      loading={vedaSaving}
+                      className="gap-2"
+                    >
+                      {vedaState.connections[0].is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {vedaState.connections[0].is_active ? 'Pause' : 'Resume'}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => deleteVedaConnection(vedaState.connections[0])}
+                      disabled={vedaSaving}
+                      className="gap-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {!vedaLoading && vedaState && !vedaState.isAllowedWorkspace && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/30">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                  Veda EMR cannot be connected from this workspace.
+                </p>
+                <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+                  Current workspace: {vedaState.workspace?.business_name || 'Unknown'}. Required workspace: {vedaState.config.allowedRivioOrganizationName}.
+                </p>
+              </div>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-5 w-5 text-slate-500" />
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700 dark:text-slate-300">
+                    Veda Organization
+                  </h3>
+                </div>
+
+                <Input
+                  label="Veda Organization ID"
+                  name="vedaOrganizationId"
+                  value={vedaForm.vedaOrganizationId}
+                  onChange={handleVedaFormChange}
+                  placeholder="veda_org_..."
+                  disabled={Boolean(vedaState?.connections?.[0])}
+                />
+                <Input
+                  label="Display Name"
+                  name="displayName"
+                  value={vedaForm.displayName}
+                  onChange={handleVedaFormChange}
+                  placeholder="Veda EMR"
+                />
+                <Input
+                  label="Veda Webhook Base URL"
+                  name="webhookBaseUrl"
+                  value={vedaForm.webhookBaseUrl}
+                  onChange={handleVedaFormChange}
+                  placeholder="https://vedaemr.com"
+                />
+                <Textarea
+                  label="Internal Notes"
+                  name="notes"
+                  value={vedaForm.notes}
+                  onChange={handleVedaFormChange}
+                  placeholder="Production Veda EMR connection for Physical Therapy 365"
+                />
+                <Button
+                  onClick={saveVedaConnection}
+                  loading={vedaSaving}
+                  disabled={!vedaState?.isAllowedWorkspace || !vedaForm.vedaOrganizationId.trim()}
+                  className="gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  {vedaState?.connections?.[0] ? 'Save Integration' : 'Connect Veda'}
+                </Button>
+              </div>
+
+              <div className="space-y-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Webhook className="h-5 w-5 text-slate-500" />
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700 dark:text-slate-300">
+                    Keys & Webhooks
+                  </h3>
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Veda to Rivio HMAC Secret</p>
+                        <p className="mt-1 font-mono text-xs text-slate-500">{vedaState?.config.secrets.vedaToRivioSharedSecret || 'Loading'}</p>
+                      </div>
+                      <Badge variant={vedaState?.config.secrets.vedaToRivioSharedSecretConfigured ? 'success' : 'danger'}>
+                        {vedaState?.config.secrets.vedaToRivioSharedSecretConfigured ? 'Configured' : 'Missing'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900/50">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Rivio to Veda Webhook Secret</p>
+                        <p className="mt-1 font-mono text-xs text-slate-500">{vedaState?.config.secrets.rivioToVedaWebhookSecret || 'Loading'}</p>
+                      </div>
+                      <Badge variant={vedaState?.config.secrets.rivioToVedaWebhookSecretConfigured ? 'success' : 'danger'}>
+                        {vedaState?.config.secrets.rivioToVedaWebhookSecretConfigured ? 'Configured' : 'Missing'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {vedaState &&
+                    Object.entries(vedaState.config.endpoints).map(([key, value]) => (
+                      <div
+                        key={key}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{key}</p>
+                          <p className="truncate font-mono text-xs text-slate-800 dark:text-slate-200">{value}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => copyText(value)} className="px-2">
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700 dark:text-slate-300">
+                    Failed Webhook Deliveries
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Delivery failures are kept here with retry timing and response status.
+                  </p>
+                </div>
+                <Badge variant={vedaState?.failedWebhookDeliveries?.length ? 'warning' : 'success'}>
+                  {vedaState?.failedWebhookDeliveries?.length || 0} failed
+                </Badge>
+              </div>
+
+              {!vedaState?.failedWebhookDeliveries?.length ? (
+                <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-900/50 dark:text-slate-400">
+                  No failed Veda webhook deliveries.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {vedaState.failedWebhookDeliveries.map((delivery) => (
+                    <div key={delivery.id} className="rounded-lg bg-red-50 p-3 text-sm dark:bg-red-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-mono text-xs text-red-900 dark:text-red-200">{delivery.event_id}</p>
+                        <Badge variant="danger">HTTP {delivery.response_status || 'error'}</Badge>
+                      </div>
+                      <p className="mt-2 break-all text-red-800 dark:text-red-300">{delivery.last_error || delivery.destination_url}</p>
+                      <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                        Attempts: {delivery.attempt_count} · Next retry: {delivery.next_retry_at ? new Date(delivery.next_retry_at).toLocaleString() : 'not scheduled'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </Card>
 

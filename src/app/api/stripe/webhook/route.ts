@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
+import { dollarsToCents, emitVedaInvoiceEvent, mapStripePaymentMethod } from '@/lib/vedaIntegration';
 
 export const dynamic = 'force-dynamic';
 
@@ -222,6 +223,7 @@ async function markInvoicePaid({
     .update({
       status: 'paid',
       paid_date: today,
+      paid_amount: existing.total,
       payment_method: 'stripe',
       stripe_checkout_session_id: stripeSessionId || undefined,
       stripe_payment_intent_id: stripePaymentIntentId || undefined,
@@ -241,6 +243,35 @@ async function markInvoicePaid({
     description: `Payment received via ${pmLabel}`,
     created_at: now,
   }]);
+
+  const vedaPaymentMethod = mapStripePaymentMethod(paymentMethodType);
+  await supabase.from('payment_attempts').upsert(
+    {
+      invoice_id: invoiceId,
+      status: 'succeeded',
+      amount_cents: dollarsToCents(existing.total),
+      payment_method: vedaPaymentMethod,
+      payment_processor: 'stripe',
+      processor_payment_id: stripePaymentIntentId || stripeSessionId,
+      metadata: {
+        stripeSessionId,
+        stripePaymentIntentId,
+        paymentMethodLabel: pmLabel,
+      },
+    },
+    { onConflict: 'payment_processor,processor_payment_id' }
+  );
+
+  await emitVedaInvoiceEvent({
+    eventType: 'invoice.paid',
+    invoiceId,
+    paymentMethod: vedaPaymentMethod,
+    paymentProcessor: 'stripe',
+    processorPaymentId: stripePaymentIntentId || stripeSessionId,
+    metadata: {
+      paymentMethodLabel: pmLabel,
+    },
+  });
 
   console.log(`[webhook] Invoice ${invoiceId} marked paid via ${pmLabel}`);
 
@@ -470,6 +501,59 @@ export async function POST(request: NextRequest) {
         stripeSessionId: '',
         stripePaymentIntentId: paymentIntent.id,
         paymentMethodType: pmType,
+      });
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const invoiceId = paymentIntent.metadata?.invoice_id;
+
+      if (!invoiceId) {
+        console.log('[webhook] payment_intent.payment_failed: no invoice_id in metadata — skipping');
+        return NextResponse.json({ received: true });
+      }
+
+      const supabase = createServerSupabaseClient();
+      const pmType = paymentIntent.payment_method_types?.includes('us_bank_account')
+        ? 'us_bank_account'
+        : 'card';
+      const vedaPaymentMethod = mapStripePaymentMethod(pmType);
+      const failureMessage = paymentIntent.last_payment_error?.message || 'Payment failed';
+
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select('total')
+        .eq('id', invoiceId)
+        .single();
+
+      await supabase.from('payment_attempts').upsert(
+        {
+          invoice_id: invoiceId,
+          status: 'failed',
+          amount_cents: dollarsToCents(invoice?.total || 0),
+          payment_method: vedaPaymentMethod,
+          payment_processor: 'stripe',
+          processor_payment_id: paymentIntent.id,
+          failure_message: failureMessage,
+          metadata: {
+            stripePaymentIntentId: paymentIntent.id,
+          },
+        },
+        { onConflict: 'payment_processor,processor_payment_id' }
+      );
+
+      await supabase
+        .from('invoices')
+        .update({ latest_payment_failure: failureMessage })
+        .eq('id', invoiceId);
+
+      await emitVedaInvoiceEvent({
+        eventType: 'invoice.payment_failed',
+        invoiceId,
+        paymentMethod: vedaPaymentMethod,
+        paymentProcessor: 'stripe',
+        processorPaymentId: paymentIntent.id,
+        failureMessage,
       });
     }
 

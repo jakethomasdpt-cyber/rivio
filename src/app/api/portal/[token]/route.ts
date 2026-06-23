@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
+import { emitVedaInvoiceEvent } from '@/lib/vedaIntegration';
 
 export async function GET(
   request: NextRequest,
@@ -68,6 +69,8 @@ export async function GET(
           created_at: now,
         },
       ]);
+
+      await emitVedaInvoiceEvent({ eventType: 'invoice.viewed', invoiceId: invoice.id });
     }
 
     // Remove internal_notes from response

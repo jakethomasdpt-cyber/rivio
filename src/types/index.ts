@@ -82,6 +82,10 @@ export interface Invoice {
   updated_at: string;
   sent_at?: string;
   viewed_at?: string;
+  veda_organization_id?: string;
+  veda_patient_id?: string;
+  veda_invoice_id?: string;
+  latest_payment_failure?: string;
   workspace?: Workspace;
 }
 
