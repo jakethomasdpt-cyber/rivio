@@ -55,7 +55,7 @@ export default function AchPayButton({ portalToken, total, hasSurcharge }: AchPa
             )}
           </div>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            Connect your bank account via Stripe · settles in 3–5 days
+            Connect your bank account securely via Stripe
           </p>
           {hasSurcharge && (
             <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">

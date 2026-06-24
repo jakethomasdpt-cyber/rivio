@@ -372,7 +372,11 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
 
                 {/* Apple Pay / Google Pay */}
                 {(invoice as any).accept_wallet === true && (
-                  <WalletPayButton portalToken={token} total={invoice.total} />
+                  <WalletPayButton
+                    portalToken={token}
+                    total={invoice.total}
+                    surcharge={(invoice as any).surcharge}
+                  />
                 )}
 
                 {/* Venmo */}

@@ -74,7 +74,7 @@ export default function SavedAchPayButton({ portalToken, total, savedMethods }: 
             {bankLabel}
           </p>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Your saved bank account · settles in 3–5 days
+            Pay securely with your saved bank account
           </p>
           {error && (
             <p className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>

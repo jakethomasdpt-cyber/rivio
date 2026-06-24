@@ -6,11 +6,19 @@ import { formatCurrency } from '@/lib/utils';
 interface WalletPayButtonProps {
   portalToken: string;
   total: number;
+  surcharge?: {
+    enabled: boolean;
+    rate: number;
+    label: string;
+    amount: number;
+  };
 }
 
-export default function WalletPayButton({ portalToken, total }: WalletPayButtonProps) {
+export default function WalletPayButton({ portalToken, total, surcharge }: WalletPayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasSurcharge = surcharge?.enabled && surcharge.amount > 0;
+  const totalWithSurcharge = hasSurcharge ? total + surcharge.amount : total;
 
   async function handlePay() {
     setLoading(true);
@@ -48,6 +56,11 @@ export default function WalletPayButton({ portalToken, total }: WalletPayButtonP
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-semibold text-slate-900 dark:text-slate-100">Apple Pay / Google Pay</p>
+            {hasSurcharge && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                +{surcharge.rate}% fee
+              </span>
+            )}
             {/* Small logos as text badges */}
             <span className="inline-flex items-center rounded bg-black px-1.5 py-0.5 text-xs font-semibold text-white leading-none">
               Pay
@@ -59,6 +72,11 @@ export default function WalletPayButton({ portalToken, total }: WalletPayButtonP
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             One tap with your saved card or device wallet
           </p>
+          {hasSurcharge && (
+            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+              {surcharge.label}: {formatCurrency(surcharge.amount)} · Total: {formatCurrency(totalWithSurcharge)}
+            </p>
+          )}
           {error && (
             <p className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
           )}
@@ -77,7 +95,7 @@ export default function WalletPayButton({ portalToken, total }: WalletPayButtonP
               Opening…
             </>
           ) : (
-            <>Pay {formatCurrency(total)}</>
+            <>Pay {formatCurrency(hasSurcharge ? totalWithSurcharge : total)}</>
           )}
         </button>
       </div>
