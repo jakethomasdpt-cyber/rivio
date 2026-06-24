@@ -45,25 +45,6 @@ function normalizeEmail(email: unknown): string | null {
   return typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
 }
 
-function normalizeCard(card: any) {
-  const number = typeof card?.number === 'string' ? card.number.replace(/\s+/g, '') : '';
-  const expMonth = Number(card?.expMonth);
-  const expYear = Number(card?.expYear);
-  const cvc = typeof card?.cvc === 'string' ? card.cvc.trim() : '';
-  if (!/^\d{12,19}$/.test(number)) throw new Error('paymentMethod.card.number is invalid');
-  if (!Number.isInteger(expMonth) || expMonth < 1 || expMonth > 12) throw new Error('paymentMethod.card.expMonth is invalid');
-  if (!Number.isInteger(expYear) || !/^\d{2}(\d{2})?$/.test(String(card?.expYear ?? ''))) {
-    throw new Error('paymentMethod.card.expYear is invalid');
-  }
-  if (!/^\d{3,4}$/.test(cvc)) throw new Error('paymentMethod.card.cvc is invalid');
-  return {
-    number,
-    exp_month: expMonth,
-    exp_year: expYear < 100 ? 2000 + expYear : expYear,
-    cvc,
-  };
-}
-
 function normalizeLines(lines: unknown, amountCents: number): ChargeLine[] {
   if (!Array.isArray(lines) || lines.length === 0) {
     return [{
@@ -317,21 +298,13 @@ export async function POST(request: NextRequest) {
       await supabase.from('clients').update({ stripe_customer_id: stripeCustomerId }).eq('id', client.id);
     }
 
-    const card = body.paymentMethod?.card;
     const paymentMethodId = typeof body.paymentMethod?.paymentMethodId === 'string'
       ? body.paymentMethod.paymentMethodId
       : null;
-    const paymentMethod = paymentMethodId
-      ? await stripe.paymentMethods.retrieve(paymentMethodId)
-      : await stripe.paymentMethods.create({
-        type: 'card',
-        card: normalizeCard(card),
-        billing_details: {
-          name: card?.cardholderName || client.name || undefined,
-          email: client.email || undefined,
-          address: card?.postalCode ? { postal_code: card.postalCode } : undefined,
-        },
-      });
+    if (!paymentMethodId || !/^pm_[A-Za-z0-9_]+$/.test(paymentMethodId)) {
+      return NextResponse.json({ error: 'paymentMethod.paymentMethodId is required. Use Stripe.js secure card entry before charging.' }, { status: 400 });
+    }
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,

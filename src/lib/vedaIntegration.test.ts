@@ -19,7 +19,10 @@ test('Veda manual card charge endpoint uses HMAC auth, idempotency, Stripe, and 
   assert.match(route, /resolveVedaTenant\(vedaOrganizationId\)/);
   assert.match(route, /getIdempotentResponse\(scope, idempotencyKey\)/);
   assert.match(route, /storeIdempotentResponse\(scope, idempotencyKey/);
-  assert.match(route, /stripe\.paymentMethods\.create/);
+  assert.match(route, /paymentMethod\.paymentMethodId is required/);
+  assert.match(route, /stripe\.paymentMethods\.retrieve\(paymentMethodId\)/);
+  assert.doesNotMatch(route, /stripe\.paymentMethods\.create/);
+  assert.doesNotMatch(route, /normalizeCard/);
   assert.match(route, /stripe\.paymentIntents\.create/);
   assert.match(route, /confirm: true/);
   assert.match(route, /payment_attempts/);
