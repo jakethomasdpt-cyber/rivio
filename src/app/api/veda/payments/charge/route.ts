@@ -6,6 +6,7 @@ import {
   centsToDollars,
   emitVedaInvoiceEvent,
   generateInvoiceNumber,
+  getAppUrl,
   getIdempotentResponse,
   hostedInvoiceUrl,
   resolveVedaTenant,
@@ -311,8 +312,10 @@ export async function POST(request: NextRequest) {
       currency: 'usd',
       customer: stripeCustomerId,
       payment_method: paymentMethod.id,
+      payment_method_types: ['card'],
       confirm: true,
       off_session: false,
+      return_url: `${getAppUrl()}/dashboard/invoices/${invoice.id}`,
       description: `Veda manual charge ${invoice.invoice_number}`,
       metadata: {
         invoice_id: invoice.id,
