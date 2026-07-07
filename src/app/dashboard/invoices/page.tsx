@@ -19,6 +19,7 @@ import {
   MoreVertical,
   UserRound,
   Download,
+  Bell,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -381,6 +382,22 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleSendReminder = async (invoiceId: string) => {
+    try {
+      const result = await apiFetch(`/api/invoices/${invoiceId}/remind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const invoicesData = await apiFetch('/api/invoices');
+      setInvoices(invoicesData || []);
+
+      alert(`Reminder sent to ${result.recipient || 'client'}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reminder');
+    }
+  };
+
   const handleMarkPaid = async (invoiceId: string) => {
     try {
       await apiFetch(`/api/invoices/${invoiceId}/mark-paid`, {
@@ -646,6 +663,7 @@ export default function InvoicesPage() {
                   <InvoiceQuickActions
                     invoice={invoice}
                     onSend={() => handleSendInvoice(invoice.id)}
+                    onRemind={() => handleSendReminder(invoice.id)}
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
                     onDelete={() => setInvoiceToDelete(invoice)}
@@ -657,6 +675,7 @@ export default function InvoicesPage() {
                   <InvoiceDetailView
                     invoice={invoice}
                     onSend={() => handleSendInvoice(invoice.id)}
+                    onRemind={() => handleSendReminder(invoice.id)}
                     onMarkPaid={() => handleMarkPaid(invoice.id)}
                     onDuplicate={() => handleDuplicate(invoice.id)}
                     onDelete={() => setInvoiceToDelete(invoice)}
@@ -790,6 +809,7 @@ function StatCard({
 interface InvoiceQuickActionsProps {
   invoice: Invoice;
   onSend: () => void;
+  onRemind: () => void;
   onMarkPaid: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -799,6 +819,7 @@ interface InvoiceQuickActionsProps {
 function InvoiceQuickActions({
   invoice,
   onSend,
+  onRemind,
   onMarkPaid,
   onDuplicate,
   onDelete,
@@ -818,6 +839,19 @@ function InvoiceQuickActions({
           title="Send invoice"
         >
           <Send className="h-4 w-4" />
+        </button>
+      )}
+
+      {invoice.status !== 'paid' && invoice.status !== 'draft' && invoice.status !== 'cancelled' && (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemind();
+          }}
+          className="rounded-lg p-2 text-amber-600 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+          title="Send payment reminder"
+        >
+          <Bell className="h-4 w-4" />
         </button>
       )}
 
@@ -890,6 +924,7 @@ function InvoiceQuickActions({
 function InvoiceDetailView({
   invoice,
   onSend,
+  onRemind,
   onMarkPaid,
   onDuplicate,
   onDelete,
@@ -897,6 +932,7 @@ function InvoiceDetailView({
 }: {
   invoice: Invoice;
   onSend: () => void;
+  onRemind: () => void;
   onMarkPaid: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -1021,6 +1057,12 @@ function InvoiceDetailView({
           <Button onClick={onSend} size="sm" className="gap-2">
             <Send className="h-4 w-4" />
             Send Invoice
+          </Button>
+        )}
+        {invoice.status !== 'paid' && invoice.status !== 'draft' && invoice.status !== 'cancelled' && (
+          <Button onClick={onRemind} size="sm" variant="outline" className="gap-2">
+            <Bell className="h-4 w-4" />
+            Send Reminder
           </Button>
         )}
         {invoice.status !== 'paid' && invoice.status !== 'draft' && (
