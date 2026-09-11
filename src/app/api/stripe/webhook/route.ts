@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
@@ -187,14 +187,14 @@ async function markInvoicePaid({
   stripePaymentIntentId: string | null;
   paymentMethodType: string;
 }) {
-  const supabase = createServerSupabaseClient();
+  const dbClient = createDatabaseClient();
   const now = new Date().toISOString();
   const today = now.split('T')[0]; // YYYY-MM-DD for the date column
 
   // Idempotency — check if already paid to avoid double-processing
   // NOTE: client_name/client_email are on the clients table, not invoices directly.
   // Join via clients(name, email) and fetch workspace separately via user_id.
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existing, error: fetchError } = await dbClient
     .from('invoices')
     .select('id, status, invoice_number, total, portal_token, user_id, clients(name, email)')
     .eq('id', invoiceId)
@@ -218,7 +218,7 @@ async function markInvoicePaid({
       : 'Card';
 
   // Update invoice status → paid
-  const { error: updateError } = await supabase
+  const { error: updateError } = await dbClient
     .from('invoices')
     .update({
       status: 'paid',
@@ -237,7 +237,7 @@ async function markInvoicePaid({
   }
 
   // Log timeline event
-  await supabase.from('timeline_events').insert([{
+  await dbClient.from('timeline_events').insert([{
     invoice_id: invoiceId,
     event_type: 'paid',
     description: `Payment received via ${pmLabel}`,
@@ -245,7 +245,7 @@ async function markInvoicePaid({
   }]);
 
   const vedaPaymentMethod = mapStripePaymentMethod(paymentMethodType);
-  await supabase.from('payment_attempts').upsert(
+  await dbClient.from('payment_attempts').upsert(
     {
       invoice_id: invoiceId,
       status: 'succeeded',
@@ -286,7 +286,7 @@ async function markInvoicePaid({
   }
 
   // Fetch workspace for branding (separate query since no direct FK invoices→workspaces)
-  const { data: workspace } = await supabase
+  const { data: workspace } = await dbClient
     .from('workspaces')
     .select('business_name, brand_color, email')
     .eq('user_id', existing.user_id)
@@ -453,22 +453,22 @@ export async function POST(request: NextRequest) {
       // Ensure stripe_customer_id is saved to the client record
       // (backup for the checkout endpoint's create-customer flow)
       if (session.customer) {
-        const supabase = createServerSupabaseClient();
-        const { data: inv } = await supabase
+        const dbClient = createDatabaseClient();
+        const { data: inv } = await dbClient
           .from('invoices')
           .select('client_id')
           .eq('id', invoiceId)
           .single();
 
         if (inv?.client_id) {
-          const { data: client } = await supabase
+          const { data: client } = await dbClient
             .from('clients')
             .select('stripe_customer_id')
             .eq('id', inv.client_id)
             .single();
 
           if (client && !client.stripe_customer_id) {
-            await supabase
+            await dbClient
               .from('clients')
               .update({ stripe_customer_id: String(session.customer) })
               .eq('id', inv.client_id);
@@ -513,20 +513,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true });
       }
 
-      const supabase = createServerSupabaseClient();
+      const dbClient = createDatabaseClient();
       const pmType = paymentIntent.payment_method_types?.includes('us_bank_account')
         ? 'us_bank_account'
         : 'card';
       const vedaPaymentMethod = mapStripePaymentMethod(pmType);
       const failureMessage = paymentIntent.last_payment_error?.message || 'Payment failed';
 
-      const { data: invoice } = await supabase
+      const { data: invoice } = await dbClient
         .from('invoices')
         .select('total')
         .eq('id', invoiceId)
         .single();
 
-      await supabase.from('payment_attempts').upsert(
+      await dbClient.from('payment_attempts').upsert(
         {
           invoice_id: invoiceId,
           status: 'failed',
@@ -542,7 +542,7 @@ export async function POST(request: NextRequest) {
         { onConflict: 'payment_processor,processor_payment_id' }
       );
 
-      await supabase
+      await dbClient
         .from('invoices')
         .update({ latest_payment_failure: failureMessage })
         .eq('id', invoiceId);

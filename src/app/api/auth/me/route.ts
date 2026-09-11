@@ -1,16 +1,17 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const supabase = await createAuthServerClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const dbClient = await createAuthServerClient();
+    const { data: { user }, error } = await dbClient.auth.getUser();
 
     if (error || !user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const adminClient = createServerSupabaseClient();
+    const adminClient = createDatabaseClient();
     const { data: workspace } = await adminClient
       .from('workspaces')
       .select('*')

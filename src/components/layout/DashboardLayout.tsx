@@ -2,7 +2,7 @@
 import Sidebar from './Sidebar';
 import ThemeProvider from './ThemeProvider';
 import { useWorkspace } from '@/hooks/useWorkspace';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { createBrowserAuthClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LogOut, Settings, ChevronDown } from 'lucide-react';
@@ -13,8 +13,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleLogout = async () => {
-    const supabase = createBrowserSupabaseClient();
-    await supabase.auth.signOut();
+    const dbClient = createBrowserAuthClient();
+    await dbClient.auth.signOut();
     router.push('/login');
   };
 

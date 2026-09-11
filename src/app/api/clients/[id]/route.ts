@@ -1,9 +1,10 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -16,9 +17,9 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: clientId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: client, error: clientError } = await supabase
+    const { data: client, error: clientError } = await dbClient
       .from('clients')
       .select('*')
       .eq('id', clientId)
@@ -32,7 +33,7 @@ export async function GET(
       );
     }
 
-    const { data: invoices } = await supabase
+    const { data: invoices } = await dbClient
       .from('invoices')
       .select('*')
       .eq('client_id', clientId)
@@ -64,10 +65,10 @@ export async function PUT(
     const body = await request.json();
     const { name, email, phone, address, city, state, zip, notes } = body;
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Verify client belongs to user
-    const { data: existingClient } = await supabase
+    const { data: existingClient } = await dbClient
       .from('clients')
       .select('id')
       .eq('id', clientId)
@@ -81,7 +82,7 @@ export async function PUT(
       );
     }
 
-    const { data: client, error } = await supabase
+    const { data: client, error } = await dbClient
       .from('clients')
       .update({
         name,
@@ -125,10 +126,10 @@ export async function DELETE(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: clientId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Verify client belongs to user
-    const { data: existingClient } = await supabase
+    const { data: existingClient } = await dbClient
       .from('clients')
       .select('id')
       .eq('id', clientId)
@@ -143,7 +144,7 @@ export async function DELETE(
     }
 
     // Check for unpaid invoices
-    const { data: unpaidInvoices } = await supabase
+    const { data: unpaidInvoices } = await dbClient
       .from('invoices')
       .select('id')
       .eq('client_id', clientId)
@@ -158,7 +159,7 @@ export async function DELETE(
       );
     }
 
-    const { error } = await supabase
+    const { error } = await dbClient
       .from('clients')
       .delete()
       .eq('id', clientId)

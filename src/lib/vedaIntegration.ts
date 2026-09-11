@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import {
   createHmacSignature,
   mapStripePaymentMethod,
@@ -93,8 +93,8 @@ export function generateInvoiceNumber(prefix = 'VEDA'): string {
 }
 
 export async function resolveVedaTenant(vedaOrganizationId: string) {
-  const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
+  const dbClient = createDatabaseClient();
+  const { data, error } = await dbClient
     .from('veda_organization_mappings')
     .select('veda_organization_id, user_id, workspace_id, is_active, deleted_at')
     .eq('veda_organization_id', vedaOrganizationId)
@@ -106,7 +106,7 @@ export async function resolveVedaTenant(vedaOrganizationId: string) {
     return null;
   }
 
-  const { data: workspace } = await supabase
+  const { data: workspace } = await dbClient
     .from('workspaces')
     .select('business_name')
     .eq('user_id', data.user_id)
@@ -126,8 +126,8 @@ export async function resolveVedaTenant(vedaOrganizationId: string) {
 export async function getIdempotentResponse(scope: string, key: string | null) {
   if (!key) return null;
 
-  const supabase = createServerSupabaseClient();
-  const { data } = await supabase
+  const dbClient = createDatabaseClient();
+  const { data } = await dbClient
     .from('idempotency_keys')
     .select('response_status, response_body')
     .eq('scope', scope)
@@ -142,8 +142,8 @@ export async function getIdempotentResponse(scope: string, key: string | null) {
 export async function storeIdempotentResponse(scope: string, key: string | null, status: number, body: unknown) {
   if (!key) return;
 
-  const supabase = createServerSupabaseClient();
-  await supabase.from('idempotency_keys').upsert(
+  const dbClient = createDatabaseClient();
+  await dbClient.from('idempotency_keys').upsert(
     {
       scope,
       key,
@@ -175,8 +175,8 @@ export async function emitVedaInvoiceEvent({
   const secret = process.env.RIVIO_VEDA_WEBHOOK_SECRET || '';
   if (!secret) return;
 
-  const supabase = createServerSupabaseClient();
-  const { data: invoice, error } = await supabase
+  const dbClient = createDatabaseClient();
+  const { data: invoice, error } = await dbClient
     .from('invoices')
     .select(
       'id, invoice_number, status, total, paid_date, portal_token, veda_organization_id, veda_patient_id, veda_invoice_id, veda_metadata, client_id'
@@ -188,7 +188,7 @@ export async function emitVedaInvoiceEvent({
     return;
   }
 
-  const { data: mapping } = await supabase
+  const { data: mapping } = await dbClient
     .from('veda_organization_mappings')
     .select('webhook_base_url')
     .eq('veda_organization_id', invoice.veda_organization_id)
@@ -197,7 +197,7 @@ export async function emitVedaInvoiceEvent({
   const baseUrl = (mapping?.webhook_base_url || process.env.VEDA_WEBHOOK_BASE_URL || '').replace(/\/$/, '');
   if (!baseUrl) return;
 
-  const { data: customerLink } = await supabase
+  const { data: customerLink } = await dbClient
     .from('veda_integration_customers')
     .select('rivio_customer_id')
     .eq('client_id', invoice.client_id)
@@ -236,14 +236,14 @@ export async function emitVedaInvoiceEvent({
   const signature = createHmacSignature({ secret, timestamp, rawBody });
   const webhookUrl = `${baseUrl}/api/rivio/webhook`;
 
-  await supabase.from('invoice_events').insert({
+  await dbClient.from('invoice_events').insert({
     id: eventId,
     invoice_id: invoice.id,
     event_type: eventType,
     payload,
   });
 
-  const { data: delivery } = await supabase
+  const { data: delivery } = await dbClient
     .from('webhook_deliveries')
     .insert({
       event_id: eventId,
@@ -268,7 +268,7 @@ export async function emitVedaInvoiceEvent({
       body: rawBody,
     });
 
-    await supabase
+    await dbClient
       .from('webhook_deliveries')
       .update({
         status: response.ok ? 'delivered' : 'failed',
@@ -283,7 +283,7 @@ export async function emitVedaInvoiceEvent({
       console.error('[veda webhook] delivery failed', { eventId, invoiceId, status: response.status });
     }
   } catch (err) {
-    await supabase
+    await dbClient
       .from('webhook_deliveries')
       .update({
         status: 'failed',
@@ -309,8 +309,8 @@ export async function emitVedaCustomerEvent({
   const secret = process.env.RIVIO_VEDA_WEBHOOK_SECRET || '';
   if (!secret) return;
 
-  const supabase = createServerSupabaseClient();
-  const { data: mapping } = await supabase
+  const dbClient = createDatabaseClient();
+  const { data: mapping } = await dbClient
     .from('veda_organization_mappings')
     .select('webhook_base_url')
     .eq('veda_organization_id', vedaOrganizationId)
@@ -346,7 +346,7 @@ export async function emitVedaCustomerEvent({
   const signature = createHmacSignature({ secret, timestamp, rawBody });
   const webhookUrl = `${baseUrl}/api/rivio/webhook`;
 
-  const { data: delivery } = await supabase
+  const { data: delivery } = await dbClient
     .from('webhook_deliveries')
     .insert({
       event_id: eventId,
@@ -370,7 +370,7 @@ export async function emitVedaCustomerEvent({
       body: rawBody,
     });
 
-    await supabase
+    await dbClient
       .from('webhook_deliveries')
       .update({
         status: response.ok ? 'delivered' : 'failed',
@@ -381,7 +381,7 @@ export async function emitVedaCustomerEvent({
       })
       .eq('id', delivery?.id);
   } catch (err) {
-    await supabase
+    await dbClient
       .from('webhook_deliveries')
       .update({
         status: 'failed',

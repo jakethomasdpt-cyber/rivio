@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { emitVedaInvoiceEvent } from '@/lib/vedaIntegration';
 
@@ -8,10 +8,10 @@ export async function GET(
 ) {
   try {
     const { token: portalToken } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Get invoice by portal token
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .select('*, clients(name, email, phone, address, city, state, zip)')
       .eq('portal_token', portalToken)
@@ -36,14 +36,14 @@ export async function GET(
     }
 
     // Get workspace for the invoice's user
-    const { data: workspace } = await supabase
+    const { data: workspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', invoice.user_id)
       .single();
 
     // Get line items
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoice.id);
@@ -52,7 +52,7 @@ export async function GET(
 
     // Update status to viewed if sent
     if (invoice.status === 'sent') {
-      await supabase
+      await dbClient
         .from('invoices')
         .update({
           status: 'viewed',
@@ -61,7 +61,7 @@ export async function GET(
         .eq('id', invoice.id);
 
       // Create timeline event
-      await supabase.from('timeline_events').insert([
+      await dbClient.from('timeline_events').insert([
         {
           invoice_id: invoice.id,
           event_type: 'viewed',

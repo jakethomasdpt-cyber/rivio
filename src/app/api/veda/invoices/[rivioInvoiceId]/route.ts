@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import { dollarsToCents, hostedInvoiceUrl, verifyHmacSignature } from '@/lib/vedaIntegration';
 
 export const dynamic = 'force-dynamic';
@@ -29,9 +29,9 @@ export async function GET(
 
   try {
     const { rivioInvoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .select(
         'id, invoice_number, status, subtotal, tax_amount, total, paid_amount, due_date, sent_at, viewed_at, paid_date, latest_payment_failure, portal_token, veda_organization_id, veda_patient_id, veda_invoice_id, veda_metadata'
@@ -43,7 +43,7 @@ export async function GET(
       return NextResponse.json({ error: 'Veda invoice not found' }, { status: 404 });
     }
 
-    const { data: attempts } = await supabase
+    const { data: attempts } = await dbClient
       .from('payment_attempts')
       .select('id, status, amount_cents, payment_method, payment_processor, processor_payment_id, failure_message, metadata, created_at')
       .eq('invoice_id', invoice.id)

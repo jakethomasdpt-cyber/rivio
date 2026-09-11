@@ -1,9 +1,10 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -12,9 +13,9 @@ export async function GET(request: NextRequest) {
     const user = await getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: clients, error } = await supabase
+    const { data: clients, error } = await dbClient
       .from('clients')
       .select('*')
       .eq('user_id', user.id)
@@ -52,9 +53,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: client, error } = await supabase
+    const { data: client, error } = await dbClient
       .from('clients')
       .insert([
         {

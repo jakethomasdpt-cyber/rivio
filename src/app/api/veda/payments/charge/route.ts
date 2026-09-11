@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   centsToDollars,
@@ -90,13 +90,13 @@ async function resolveOrCreateCustomer({
   body: any;
   tenantUserId: string;
 }) {
-  const supabase = createServerSupabaseClient();
+  const dbClient = createDatabaseClient();
   const vedaOrganizationId = requireString(body.vedaOrganizationId, 'vedaOrganizationId');
   const vedaPatientId = requireString(body.vedaPatientId, 'vedaPatientId');
   const suppliedCustomerId = typeof body.rivioCustomerId === 'string' ? body.rivioCustomerId : null;
 
   if (suppliedCustomerId) {
-    const { data: link } = await supabase
+    const { data: link } = await dbClient
       .from('veda_integration_customers')
       .select('client_id, rivio_customer_id')
       .eq('veda_organization_id', vedaOrganizationId)
@@ -107,7 +107,7 @@ async function resolveOrCreateCustomer({
     if (link?.client_id) return link;
   }
 
-  const { data: existingLink } = await supabase
+  const { data: existingLink } = await dbClient
     .from('veda_integration_customers')
     .select('client_id, rivio_customer_id')
     .eq('veda_organization_id', vedaOrganizationId)
@@ -121,7 +121,7 @@ async function resolveOrCreateCustomer({
   const email = normalizeEmail(patient.email || body.patientEmail || body.email) ?? `${vedaPatientId}@veda.local`;
   const phone = typeof patient.phone === 'string' ? patient.phone.trim() || null : null;
 
-  const { data: client, error: clientError } = await supabase
+  const { data: client, error: clientError } = await dbClient
     .from('clients')
     .insert({
       user_id: tenantUserId,
@@ -134,7 +134,7 @@ async function resolveOrCreateCustomer({
 
   if (clientError || !client) throw clientError || new Error('Failed to create customer');
 
-  const { data: link, error: linkError } = await supabase
+  const { data: link, error: linkError } = await dbClient
     .from('veda_integration_customers')
     .upsert(
       {
@@ -183,9 +183,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unknown or inactive Veda organization mapping' }, { status: 403 });
     }
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
     const customer = await resolveOrCreateCustomer({ body, tenantUserId: tenant.user_id });
-    const { data: client } = await supabase
+    const { data: client } = await dbClient
       .from('clients')
       .select('id, name, email, stripe_customer_id')
       .eq('id', customer.client_id)
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
       .single();
     if (!client) return NextResponse.json({ error: 'Rivio customer not found' }, { status: 404 });
 
-    const { data: existingInvoice } = await supabase
+    const { data: existingInvoice } = await dbClient
       .from('invoices')
       .select('id, invoice_number, status, total, portal_token, stripe_payment_intent_id')
       .eq('veda_organization_id', vedaOrganizationId)
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
     let invoice = existingInvoice as any;
     if (!invoice) {
       const invoiceNumber = generateInvoiceNumber();
-      const { data: created, error: invoiceError } = await supabase
+      const { data: created, error: invoiceError } = await dbClient
         .from('invoices')
         .insert({
           user_id: tenant.user_id,
@@ -265,10 +265,10 @@ export async function POST(request: NextRequest) {
         veda_source_id: typeof line.metadata?.sourceId === 'string' ? line.metadata.sourceId : null,
         veda_metadata: line.metadata || {},
       }));
-      const { error: linesError } = await supabase.from('line_items').insert(lineRows);
+      const { error: linesError } = await dbClient.from('line_items').insert(lineRows);
       if (linesError) throw linesError;
 
-      await supabase.from('timeline_events').insert({
+      await dbClient.from('timeline_events').insert({
         invoice_id: invoice.id,
         event_type: 'created',
         description: 'Manual card charge created from Veda EMR',
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
         },
       }, { idempotencyKey: `${idempotencyKey || invoice.id}:stripe-customer` });
       stripeCustomerId = stripeCustomer.id;
-      await supabase.from('clients').update({ stripe_customer_id: stripeCustomerId }).eq('id', client.id);
+      await dbClient.from('clients').update({ stripe_customer_id: stripeCustomerId }).eq('id', client.id);
     }
 
     const paymentMethodId = typeof body.paymentMethod?.paymentMethodId === 'string'
@@ -395,8 +395,8 @@ async function recordSuccessfulCharge({
   now: string;
   today: string;
 }) {
-  const supabase = createServerSupabaseClient();
-  await supabase
+  const dbClient = createDatabaseClient();
+  await dbClient
     .from('invoices')
     .update({
       status: 'paid',
@@ -409,7 +409,7 @@ async function recordSuccessfulCharge({
     })
     .eq('id', invoice.id);
 
-  await supabase.from('timeline_events').insert({
+  await dbClient.from('timeline_events').insert({
     invoice_id: invoice.id,
     event_type: 'paid',
     description: 'Manual card charge processed from Veda EMR',
@@ -421,7 +421,7 @@ async function recordSuccessfulCharge({
     created_at: now,
   });
 
-  await supabase.from('payment_attempts').upsert(
+  await dbClient.from('payment_attempts').upsert(
     {
       invoice_id: invoice.id,
       status: 'succeeded',
@@ -466,8 +466,8 @@ async function recordFailedAttempt({
   failureMessage: string;
   metadata: Record<string, unknown>;
 }) {
-  const supabase = createServerSupabaseClient();
-  await supabase.from('payment_attempts').upsert(
+  const dbClient = createDatabaseClient();
+  await dbClient.from('payment_attempts').upsert(
     {
       invoice_id: invoiceId,
       status: 'failed',
@@ -480,7 +480,7 @@ async function recordFailedAttempt({
     },
     { onConflict: 'payment_processor,processor_payment_id' }
   );
-  await supabase
+  await dbClient
     .from('invoices')
     .update({ latest_payment_failure: failureMessage, updated_at: new Date().toISOString() })
     .eq('id', invoiceId);

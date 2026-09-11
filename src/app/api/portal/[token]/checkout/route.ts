@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
@@ -20,10 +20,10 @@ export async function POST(
     const body = await request.json();
     const { payment_method } = body; // 'card' | 'ach' | 'wallet'
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Look up invoice by portal token — no user session needed
-    const { data: invoice, error: invoiceError } = await supabase
+    const { data: invoice, error: invoiceError } = await dbClient
       .from('invoices')
       .select('*, clients(id, name, email, stripe_customer_id)')
       .eq('portal_token', portalToken)
@@ -53,7 +53,7 @@ export async function POST(
     }
 
     // Get line items
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoice.id);
@@ -66,7 +66,7 @@ export async function POST(
     }
 
     // Get workspace settings for surcharge config
-    const { data: workspace } = await supabase
+    const { data: workspace } = await dbClient
       .from('workspaces')
       .select('card_surcharge_rate, surcharge_enabled, surcharge_label')
       .eq('user_id', invoice.user_id)
@@ -106,7 +106,7 @@ export async function POST(
       stripeCustomerId = customer.id;
 
       // Save Stripe Customer ID back to client record
-      await supabase
+      await dbClient
         .from('clients')
         .update({ stripe_customer_id: customer.id })
         .eq('id', client.id);
@@ -195,7 +195,7 @@ export async function POST(
       updatePayload.surcharge_amount = surchargeAmount;
     }
 
-    await supabase
+    await dbClient
       .from('invoices')
       .update(updatePayload)
       .eq('id', invoice.id);

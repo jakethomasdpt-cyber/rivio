@@ -1,34 +1,12 @@
-import { createAuthServerClient } from '@/lib/supabase';
+import { getAuth } from '@/lib/auth';
 import { NextRequest, NextResponse } from 'next/server';
-
 export async function POST(request: NextRequest) {
-  try {
-    const { email, password, fullName, businessName } = await request.json();
-
-    if (!email || !password || !businessName) {
-      return NextResponse.json({ error: 'Email, password, and business name are required' }, { status: 400 });
-    }
-
-    const supabase = await createAuthServerClient();
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName || '',
-          business_name: businessName,
-        },
-      },
-    });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ user: data.user, session: data.session });
-  } catch (err) {
-    console.error('Signup error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+  const body = await request.json().catch(() => null);
+  if (!body?.email || !body?.password || !body?.businessName) return NextResponse.json({ error: 'Email, password, and business name are required' }, { status: 400 });
+  const url = new URL(request.url);
+  url.pathname = '/api/auth/sign-up/email';
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  headers.set('content-type', 'application/json');
+  return getAuth().handler(new Request(url, { method: 'POST', headers, body: JSON.stringify({ email: body.email, password: body.password, name: body.fullName || body.email, businessName: body.businessName }) }));
 }

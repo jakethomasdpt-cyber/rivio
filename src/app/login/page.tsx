@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { createBrowserAuthClient } from '@/lib/auth-client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,14 +18,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const supabase = createBrowserSupabaseClient();
-      const { error } = await supabase.auth.signInWithPassword({
+      const dbClient = createBrowserAuthClient();
+      const { error } = await dbClient.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
-        setError(error.message);
+        setError(error.message || 'Unable to complete this request. Please try again.');
         setLoading(false);
         return;
       }

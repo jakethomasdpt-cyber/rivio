@@ -86,7 +86,7 @@ export default function PrivacyPage() {
               use third-party analytics trackers or advertising pixels.
             </Subsection>
             <Subsection title="Cookies">
-              Rivio uses a single session authentication cookie set by Supabase to keep you
+              Rivio uses session authentication cookies managed by Better Auth to keep you
               signed in. No advertising, cross-site tracking, or third-party cookies are used.
             </Subsection>
           </Section>
@@ -134,9 +134,9 @@ export default function PrivacyPage() {
             </p>
             <div className="mt-4 space-y-4">
               <ThirdParty
-                name="Supabase"
+                name="Neon"
                 use="Database hosting and user authentication"
-                link="https://supabase.com/privacy"
+                link="https://neon.com/privacy-policy"
                 data="Account credentials, all stored workspace data"
               />
               <ThirdParty
@@ -169,7 +169,7 @@ export default function PrivacyPage() {
 
           <Section title="7. Data Security">
             <p>
-              All data is encrypted in transit (TLS 1.2+) and encrypted at rest in Supabase.
+              All data is encrypted in transit (TLS 1.2+) and encrypted at rest in Neon.
               Access to your data is enforced at the database level through row-level security
               policies — your workspace data is cryptographically isolated from all other accounts.
             </p>

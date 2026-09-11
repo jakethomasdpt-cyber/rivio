@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { createBrowserAuthClient } from '@/lib/auth-client';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -30,20 +30,21 @@ export default function OnboardingPage() {
   // Get user data on mount
   useEffect(() => {
     const fetchUser = async () => {
-      const supabase = createBrowserSupabaseClient();
-      const { data } = await supabase.auth.getUser();
+      const dbClient = createBrowserAuthClient();
+      const { data } = await dbClient.auth.getUser();
 
       if (!data.user) {
         router.push('/login');
         return;
       }
 
-      setUserEmail(data.user.email || '');
+      const user = data.user;
+      setUserEmail(user.email || '');
       setFormData((prev) => ({
         ...prev,
-        businessName: data.user.user_metadata?.business_name || '',
-        ownerName: data.user.user_metadata?.full_name || '',
-        email: data.user.email || '',
+        businessName: user.user_metadata?.business_name || '',
+        ownerName: user.user_metadata?.full_name || '',
+        email: user.email || '',
       }));
     };
 

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { createBrowserAuthClient } from '@/lib/auth-client';
 
 export interface Workspace {
   id: string;
@@ -43,8 +43,8 @@ export function useWorkspace() {
       try {
         setLoading(true);
         setError(null);
-        const supabase = createBrowserSupabaseClient();
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const dbClient = createBrowserAuthClient();
+        const { data: { user: authUser } } = await dbClient.auth.getUser();
         if (authUser) {
           setUser(authUser as User);
           const res = await fetch('/api/workspace');

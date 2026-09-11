@@ -1,10 +1,11 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -27,10 +28,10 @@ export async function POST(
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Verify invoice belongs to user
-    const { data: existingInvoice } = await supabase
+    const { data: existingInvoice } = await dbClient
       .from('invoices')
       .select('id')
       .eq('id', invoiceId)
@@ -48,7 +49,7 @@ export async function POST(
     const finalPaidDate = paid_date || now;
 
     // Update invoice
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .update({
         status: 'paid',
@@ -69,7 +70,7 @@ export async function POST(
     }
 
     // Create timeline event
-    await supabase.from('timeline_events').insert([
+    await dbClient.from('timeline_events').insert([
       {
         invoice_id: invoiceId,
         event_type: 'paid',
@@ -79,7 +80,7 @@ export async function POST(
     ]);
 
     // Fetch line items for response
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoiceId);
@@ -87,13 +88,13 @@ export async function POST(
     // Send payment notification email to business
     try {
       // Get invoice details for the email
-      const { data: fullInvoice } = await supabase
+      const { data: fullInvoice } = await dbClient
         .from('invoices')
         .select('*, clients(name, email)')
         .eq('id', invoiceId)
         .single();
 
-      const { data: workspace } = await supabase
+      const { data: workspace } = await dbClient
         .from('workspaces')
         .select('business_name, brand_color, email')
         .eq('user_id', user.id)

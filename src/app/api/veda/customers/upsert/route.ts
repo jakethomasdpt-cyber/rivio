@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   emitVedaCustomerEvent,
@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unknown or inactive Veda organization mapping' }, { status: 403 });
     }
 
-    const supabase = createServerSupabaseClient();
-    const { data: existingLink } = await supabase
+    const dbClient = createDatabaseClient();
+    const { data: existingLink } = await dbClient
       .from('veda_integration_customers')
       .select('id, client_id, rivio_customer_id')
       .eq('veda_organization_id', vedaOrganizationId)
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     let clientId = existingLink?.client_id as string | undefined;
 
     if (clientId) {
-      const { error: updateClientError } = await supabase
+      const { error: updateClientError } = await dbClient
         .from('clients')
         .update({
           name,
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 
       if (updateClientError) throw updateClientError;
     } else {
-      const { data: client, error: clientError } = await supabase
+      const { data: client, error: clientError } = await dbClient
         .from('clients')
         .insert({
           user_id: tenant.user_id,
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       clientId = client.id;
     }
 
-    const { data: link, error: linkError } = await supabase
+    const { data: link, error: linkError } = await dbClient
       .from('veda_integration_customers')
       .upsert(
         {

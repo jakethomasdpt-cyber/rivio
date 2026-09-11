@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { createBrowserAuthClient } from '@/lib/auth-client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -16,13 +16,13 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const supabase = createBrowserSupabaseClient();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const dbClient = createBrowserAuthClient();
+      const { error } = await dbClient.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {
-        setError(error.message);
+        setError(error.message || 'Unable to complete this request. Please try again.');
         setLoading(false);
         return;
       }

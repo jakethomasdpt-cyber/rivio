@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { authClient } from '@/lib/auth-client';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -15,22 +15,9 @@ export default function ResetPasswordPage() {
   const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    // Supabase handles the token from the URL hash automatically
-    // We just need to wait for the auth state to update
-    const supabase = createBrowserSupabaseClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setSessionReady(true);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setSessionReady(true);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    const params = new URLSearchParams(window.location.search);
+    setSessionReady(Boolean(params.get('token')) && !params.has('error'));
+    if (params.has('error')) setError('This reset link is invalid or has expired. Please request another.');
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,18 +37,18 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const supabase = createBrowserSupabaseClient();
-      const { error } = await supabase.auth.updateUser({ password });
+      const token = new URLSearchParams(window.location.search).get('token') || '';
+      const { error } = await authClient.resetPassword({ newPassword: password, token });
 
       if (error) {
-        setError(error.message);
+        setError(error.message || 'Unable to complete this request. Please try again.');
         setLoading(false);
         return;
       }
 
       setDone(true);
-      // Redirect to dashboard after 3 seconds
-      setTimeout(() => router.push('/dashboard'), 3000);
+      // Redirect to login after 3 seconds
+      setTimeout(() => router.push('/login'), 3000);
     } catch {
       setError('An unexpected error occurred. Please try again.');
       setLoading(false);

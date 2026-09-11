@@ -1,9 +1,10 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 async function getAuthUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user }, error } = await dbClient.auth.getUser();
   if (error || !user) return null;
   return user;
 }
@@ -13,7 +14,7 @@ export async function GET() {
     const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const db = createServerSupabaseClient();
+    const db = createDatabaseClient();
     const { data, error } = await db
       .from('workspaces')
       .select('*')
@@ -40,7 +41,7 @@ export async function PUT(request: NextRequest) {
       card_surcharge_rate, surcharge_enabled, surcharge_label,
     } = body;
 
-    const db = createServerSupabaseClient();
+    const db = createDatabaseClient();
     const { data, error } = await db
       .from('workspaces')
       .update({

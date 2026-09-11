@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   emitVedaInvoiceEvent,
@@ -53,8 +53,8 @@ export async function POST(
   if (cached) return cached;
 
   try {
-    const supabase = createServerSupabaseClient();
-    const { data: invoice, error } = await supabase
+    const dbClient = createDatabaseClient();
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .select('*, clients(name, email)')
       .eq('id', rivioInvoiceId)
@@ -74,7 +74,7 @@ export async function POST(
       return NextResponse.json({ error: 'Patient email is required to send invoice' }, { status: 400 });
     }
 
-    const { data: workspace } = await supabase
+    const { data: workspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', invoice.user_id)
@@ -112,12 +112,12 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to send invoice email' }, { status: 502 });
     }
 
-    await supabase
+    await dbClient
       .from('invoices')
       .update({ status: 'sent', sent_at: sentAt })
       .eq('id', invoice.id);
 
-    await supabase.from('timeline_events').insert({
+    await dbClient.from('timeline_events').insert({
       invoice_id: invoice.id,
       event_type: 'sent',
       description: 'Veda invoice sent to patient',

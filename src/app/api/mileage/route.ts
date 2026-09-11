@@ -1,12 +1,13 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 // IRS standard mileage rate for 2024/2025
 const IRS_RATE_PER_MILE = 0.70;
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const user = await getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Optional year filter (defaults to current year)
     const { searchParams } = new URL(request.url);
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const startOfYear = `${year}-01-01`;
     const endOfYear = `${year}-12-31`;
 
-    const { data: trips, error } = await supabase
+    const { data: trips, error } = await dbClient
       .from('mileage_trips')
       .select('*')
       .eq('user_id', user.id)
@@ -102,9 +103,9 @@ export async function POST(request: NextRequest) {
     // Calculate IRS deduction server-side
     const irs_deduction = Math.round(miles * IRS_RATE_PER_MILE * 100) / 100;
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: trip, error } = await supabase
+    const { data: trip, error } = await dbClient
       .from('mileage_trips')
       .insert([
         {

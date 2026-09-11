@@ -38,13 +38,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "/sessions/keen-practical-gates/nextbuild/types/**/*.ts",
-    "/sessions/keen-practical-gates/nextbuild/dev/types/**/*.ts",
-    "../../../../sessions/keen-practical-gates/nextbuild/types/**/*.ts",
-    "../../../../sessions/keen-practical-gates/nextbuild/dev/types/**/*.ts",
-    "../../nextbuild/types/**/*.ts",
-    "../../nextbuild/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

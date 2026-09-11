@@ -1,11 +1,12 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { randomBytes } from 'crypto';
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -24,10 +25,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Get invoice with line items
-    const { data: invoice, error: invoiceError } = await supabase
+    const { data: invoice, error: invoiceError } = await dbClient
       .from('invoices')
       .select('*')
       .eq('id', invoice_id)
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoice_id);
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Update invoice with stripe session ID and portal token
-    await supabase
+    await dbClient
       .from('invoices')
       .update({
         stripe_checkout_session_id: session.id,

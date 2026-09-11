@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import {
   ALLOWED_VEDA_RIVIO_ORGANIZATION_NAME,
   getAppUrl,
@@ -9,14 +10,14 @@ import {
 export const dynamic = 'force-dynamic';
 
 async function getAuthUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user }, error } = await dbClient.auth.getUser();
   if (error || !user) return null;
   return user;
 }
 
 async function getWorkspaceForUser(userId: string) {
-  const db = createServerSupabaseClient();
+  const db = createDatabaseClient();
   const { data, error } = await db
     .from('workspaces')
     .select('id, user_id, business_name')
@@ -52,7 +53,7 @@ function integrationConfig() {
 }
 
 async function loadState(userId: string) {
-  const db = createServerSupabaseClient();
+  const db = createDatabaseClient();
   const workspace = await getWorkspaceForUser(userId);
   const isAllowedWorkspace = isPhysicalTherapy365Workspace(workspace?.business_name);
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Veda organization ID is required' }, { status: 400 });
     }
 
-    const db = createServerSupabaseClient();
+    const db = createDatabaseClient();
     const { error } = await db.from('veda_organization_mappings').upsert(
       {
         veda_organization_id: vedaOrganizationId,
@@ -176,7 +177,7 @@ export async function PATCH(request: NextRequest) {
     if (typeof body.webhookBaseUrl === 'string') updates.webhook_base_url = body.webhookBaseUrl.trim() || null;
     if (typeof body.notes === 'string') updates.notes = body.notes.trim() || null;
 
-    const db = createServerSupabaseClient();
+    const db = createDatabaseClient();
     const { error } = await db
       .from('veda_organization_mappings')
       .update(updates)
@@ -215,7 +216,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Veda organization ID is required' }, { status: 400 });
     }
 
-    const db = createServerSupabaseClient();
+    const db = createDatabaseClient();
     const { error } = await db
       .from('veda_organization_mappings')
       .update({ is_active: false, deleted_at: new Date().toISOString() })

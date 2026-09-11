@@ -1,4 +1,5 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 function generateInvoiceNumber(): string {
@@ -12,8 +13,8 @@ function generateInvoiceNumber(): string {
 }
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -22,9 +23,9 @@ export async function GET(request: NextRequest) {
     const user = await getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: invoices, error } = await supabase
+    const { data: invoices, error } = await dbClient
       .from('invoices')
       .select(
         `
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     // Fetch line_items for each invoice
     const invoicesWithItems = await Promise.all(
       (invoices || []).map(async (invoice) => {
-        const { data: lineItems } = await supabase
+        const { data: lineItems } = await dbClient
           .from('line_items')
           .select('*')
           .eq('invoice_id', invoice.id);
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
       accept_wallet,
     } = body;
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Resolve client_id — auto-create client if name/email provided without saved client
     let client_id = rawClientId;
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
 
       // Try to find existing client by email first
       if (trimmedEmail) {
-        const { data: existing } = await supabase
+        const { data: existing } = await dbClient
           .from('clients')
           .select('id')
           .eq('user_id', user.id)
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
 
       // Create new client if still not found
       if (!client_id) {
-        const { data: newClient, error: clientError } = await supabase
+        const { data: newClient, error: clientError } = await dbClient
           .from('clients')
           .insert([{ user_id: user.id, name: trimmedName, email: trimmedEmail || null }])
           .select()
@@ -214,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify client belongs to user (security check — even for auto-created clients)
-    const { data: clientExists } = await supabase
+    const { data: clientExists } = await dbClient
       .from('clients')
       .select('id')
       .eq('id', client_id)
@@ -242,7 +243,7 @@ export async function POST(request: NextRequest) {
     let attempts = 0;
 
     while (!isUnique && attempts < 10) {
-      const { data: existing } = await supabase
+      const { data: existing } = await dbClient
         .from('invoices')
         .select('id')
         .eq('invoice_number', invoiceNumber)
@@ -265,7 +266,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create invoice
-    const { data: invoice, error: invoiceError } = await supabase
+    const { data: invoice, error: invoiceError } = await dbClient
       .from('invoices')
       .insert([
         {
@@ -310,7 +311,7 @@ export async function POST(request: NextRequest) {
       amount: item.rate * item.quantity,
     }));
 
-    const { error: lineItemsError } = await supabase
+    const { error: lineItemsError } = await dbClient
       .from('line_items')
       .insert(lineItemsToInsert);
 
@@ -323,7 +324,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create timeline event
-    await supabase.from('timeline_events').insert([
+    await dbClient.from('timeline_events').insert([
       {
         invoice_id: invoice.id,
         event_type: 'created',
@@ -333,7 +334,7 @@ export async function POST(request: NextRequest) {
     ]);
 
     // Fetch line items and return full invoice
-    const { data: fetchedLineItems } = await supabase
+    const { data: fetchedLineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoice.id);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   emitVedaInvoiceEvent,
@@ -23,8 +23,8 @@ export async function POST(
   if (cached) return cached;
 
   try {
-    const supabase = createServerSupabaseClient();
-    const { data: invoice, error } = await supabase
+    const dbClient = createDatabaseClient();
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .select('id, invoice_number, status, veda_organization_id')
       .eq('id', rivioInvoiceId)
@@ -40,12 +40,12 @@ export async function POST(
 
     const now = new Date().toISOString();
     if (invoice.status !== 'cancelled') {
-      await supabase
+      await dbClient
         .from('invoices')
         .update({ status: 'cancelled', voided_at: now })
         .eq('id', invoice.id);
 
-      await supabase.from('timeline_events').insert({
+      await dbClient.from('timeline_events').insert({
         invoice_id: invoice.id,
         event_type: 'cancelled',
         description: 'Invoice voided by Veda EMR',

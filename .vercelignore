@@ -1,0 +1,7 @@
+.env*
+.agents/
+skills-lock.json
+.next/
+node_modules/
+.vercel/
+sessions/

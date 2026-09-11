@@ -1,9 +1,10 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -16,9 +17,9 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: invoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .select('*')
       .eq('id', invoiceId)
@@ -32,12 +33,12 @@ export async function GET(
       );
     }
 
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoiceId);
 
-    const { data: timelineEvents } = await supabase
+    const { data: timelineEvents } = await dbClient
       .from('timeline_events')
       .select('*')
       .eq('invoice_id', invoiceId)
@@ -68,10 +69,10 @@ export async function PUT(
     const { id: invoiceId } = await params;
     const body = await request.json();
 
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Verify invoice belongs to user
-    const { data: existingInvoice } = await supabase
+    const { data: existingInvoice } = await dbClient
       .from('invoices')
       .select('id')
       .eq('id', invoiceId)
@@ -95,7 +96,7 @@ export async function PUT(
 
     updateData.updated_at = new Date().toISOString();
 
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error } = await dbClient
       .from('invoices')
       .update(updateData)
       .eq('id', invoiceId)
@@ -110,7 +111,7 @@ export async function PUT(
       );
     }
 
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoiceId);
@@ -137,10 +138,10 @@ export async function DELETE(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: invoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Verify ownership
-    const { data: invoice, error: fetchError } = await supabase
+    const { data: invoice, error: fetchError } = await dbClient
       .from('invoices')
       .select('id')
       .eq('id', invoiceId)
@@ -155,16 +156,16 @@ export async function DELETE(
     }
 
     // Delete line items first (due to foreign key)
-    await supabase.from('line_items').delete().eq('invoice_id', invoiceId);
+    await dbClient.from('line_items').delete().eq('invoice_id', invoiceId);
 
     // Delete timeline events
-    await supabase
+    await dbClient
       .from('timeline_events')
       .delete()
       .eq('invoice_id', invoiceId);
 
     // Delete invoice
-    const { error } = await supabase
+    const { error } = await dbClient
       .from('invoices')
       .delete()
       .eq('id', invoiceId)

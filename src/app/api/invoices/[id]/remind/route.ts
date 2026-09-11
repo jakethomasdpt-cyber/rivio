@@ -1,7 +1,8 @@
 import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 
 function escapeHtml(str: string | null | undefined): string {
   if (!str) return '';
@@ -31,10 +32,10 @@ function formatDate(date: string | null): string {
 }
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
+  const dbClient = await createAuthServerClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -124,9 +125,9 @@ export async function POST(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: invoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
-    const { data: invoice, error: invoiceError } = await supabase
+    const { data: invoice, error: invoiceError } = await dbClient
       .from('invoices')
       .select('*, clients(name, email)')
       .eq('id', invoiceId)
@@ -149,7 +150,7 @@ export async function POST(
       return NextResponse.json({ error: 'Client does not have an email address' }, { status: 400 });
     }
 
-    const { data: workspace } = await supabase
+    const { data: workspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', user.id)
@@ -158,7 +159,7 @@ export async function POST(
     let portalToken = invoice.portal_token;
     if (!portalToken) {
       portalToken = randomBytes(32).toString('hex');
-      await supabase
+      await dbClient
         .from('invoices')
         .update({
           portal_token: portalToken,
@@ -183,7 +184,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to send reminder email' }, { status: 500 });
     }
 
-    await supabase.from('timeline_events').insert([
+    await dbClient.from('timeline_events').insert([
       {
         invoice_id: invoiceId,
         event_type: 'reminder_sent',

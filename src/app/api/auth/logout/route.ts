@@ -1,12 +1,7 @@
-import { createAuthServerClient } from '@/lib/supabase';
-import { NextResponse } from 'next/server';
-
-export async function POST() {
-  try {
-    const supabase = await createAuthServerClient();
-    await supabase.auth.signOut();
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+import { getAuth } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+export async function POST(request: NextRequest) {
+  const url = new URL(request.url);
+  url.pathname = '/api/auth/sign-out';
+  return getAuth().handler(new Request(url, { method: 'POST', headers: request.headers, body: await request.text() || '{}' }));
 }

@@ -1,4 +1,5 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 function generateInvoiceNumber(): string {
@@ -18,8 +19,8 @@ function addDays(date: Date, days: number): Date {
 }
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -32,10 +33,10 @@ export async function POST(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: invoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Get original invoice
-    const { data: originalInvoice, error: fetchError } = await supabase
+    const { data: originalInvoice, error: fetchError } = await dbClient
       .from('invoices')
       .select('*')
       .eq('id', invoiceId)
@@ -50,7 +51,7 @@ export async function POST(
     }
 
     // Get line items
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoiceId);
@@ -68,7 +69,7 @@ export async function POST(
     let attempts = 0;
 
     while (!isUnique && attempts < 10) {
-      const { data: existing } = await supabase
+      const { data: existing } = await dbClient
         .from('invoices')
         .select('id')
         .eq('invoice_number', newInvoiceNumber)
@@ -94,7 +95,7 @@ export async function POST(
     const newDueDate = addDays(new Date(), 30).toISOString().split('T')[0];
 
     // Create new invoice
-    const { data: newInvoice, error: createError } = await supabase
+    const { data: newInvoice, error: createError } = await dbClient
       .from('invoices')
       .insert([
         {
@@ -134,7 +135,7 @@ export async function POST(
       amount: item.amount,
     }));
 
-    const { error: lineItemsError } = await supabase
+    const { error: lineItemsError } = await dbClient
       .from('line_items')
       .insert(newLineItems);
 
@@ -147,7 +148,7 @@ export async function POST(
     }
 
     // Create timeline event
-    await supabase.from('timeline_events').insert([
+    await dbClient.from('timeline_events').insert([
       {
         invoice_id: newInvoice.id,
         event_type: 'created',
@@ -157,7 +158,7 @@ export async function POST(
     ]);
 
     // Fetch line items for response
-    const { data: fetchedLineItems } = await supabase
+    const { data: fetchedLineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', newInvoice.id);

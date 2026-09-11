@@ -1,4 +1,5 @@
-import { createAuthServerClient, createServerSupabaseClient } from '@/lib/supabase';
+import { createAuthServerClient } from '@/lib/auth-server';
+import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { randomBytes } from 'crypto';
@@ -304,8 +305,8 @@ function generateInvoiceEmailHTML(
 }
 
 async function getUser() {
-  const supabase = await createAuthServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const dbClient = await createAuthServerClient();
+  const { data: { user } } = await dbClient.auth.getUser();
   return user;
 }
 
@@ -318,10 +319,10 @@ export async function POST(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id: invoiceId } = await params;
-    const supabase = createServerSupabaseClient();
+    const dbClient = createDatabaseClient();
 
     // Get invoice with client info
-    const { data: invoice, error: invoiceError } = await supabase
+    const { data: invoice, error: invoiceError } = await dbClient
       .from('invoices')
       .select('*, clients(name, email)')
       .eq('id', invoiceId)
@@ -336,14 +337,14 @@ export async function POST(
     }
 
     // Get workspace data
-    const { data: workspace } = await supabase
+    const { data: workspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', user.id)
       .single();
 
     // Get line items
-    const { data: lineItems } = await supabase
+    const { data: lineItems } = await dbClient
       .from('line_items')
       .select('*')
       .eq('invoice_id', invoiceId);
@@ -361,7 +362,7 @@ export async function POST(
     let portalToken = invoice.portal_token;
     if (!portalToken) {
       portalToken = randomBytes(32).toString('hex'); // 256-bit secure random token
-      await supabase
+      await dbClient
         .from('invoices')
         .update({
           portal_token: portalToken,
@@ -464,7 +465,7 @@ export async function POST(
     }
 
     // Update invoice status to sent
-    const { error: updateError } = await supabase
+    const { error: updateError } = await dbClient
       .from('invoices')
       .update({
         status: 'sent',
@@ -482,7 +483,7 @@ export async function POST(
     }
 
     // Create timeline event
-    await supabase.from('timeline_events').insert([
+    await dbClient.from('timeline_events').insert([
       {
         invoice_id: invoiceId,
         event_type: 'sent',
