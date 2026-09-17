@@ -1,3 +1,4 @@
+import { invoiceBranding } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
@@ -94,14 +95,17 @@ export async function POST(
         .eq('id', invoiceId)
         .single();
 
-      const { data: workspace } = await dbClient
+      const { data: rawWorkspace } = await dbClient
         .from('workspaces')
         .select('business_name, brand_color, email')
         .eq('user_id', user.id)
         .single();
+      const { workspace } = fullInvoice
+        ? await invoiceBranding(dbClient, fullInvoice, rawWorkspace)
+        : { workspace: rawWorkspace };
 
       if (fullInvoice) {
-        const businessName = workspace?.business_name || 'Physical Therapy 365';
+        const businessName = workspace?.business_name || 'Your Provider';
         const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '') ? workspace!.brand_color! : '#004a99';
         const businessEmail = workspace?.email || 'jakethomasdpt@gmail.com';
         const clientData = Array.isArray(fullInvoice.clients) ? fullInvoice.clients[0] : fullInvoice.clients;

@@ -1,3 +1,4 @@
+import { invoiceBranding } from '@/lib/integrationBranding';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
@@ -196,7 +197,7 @@ async function markInvoicePaid({
   // Join via clients(name, email) and fetch workspace separately via user_id.
   const { data: existing, error: fetchError } = await dbClient
     .from('invoices')
-    .select('id, status, invoice_number, total, portal_token, user_id, clients(name, email)')
+    .select('id, status, invoice_number, total, portal_token, user_id, veda_organization_id, clients(name, email)')
     .eq('id', invoiceId)
     .single();
 
@@ -286,13 +287,14 @@ async function markInvoicePaid({
   }
 
   // Fetch workspace for branding (separate query since no direct FK invoices→workspaces)
-  const { data: workspace } = await dbClient
+  const { data: rawWorkspace } = await dbClient
     .from('workspaces')
     .select('business_name, brand_color, email')
     .eq('user_id', existing.user_id)
     .single();
+  const { workspace } = await invoiceBranding(dbClient, existing, rawWorkspace);
 
-  const businessName = workspace?.business_name || 'Physical Therapy 365';
+  const businessName = workspace?.business_name || 'Your Provider';
   const brandColor = /^#[0-9A-Fa-f]{6}$/.test(workspace?.brand_color || '')
     ? workspace!.brand_color!
     : '#2563eb';

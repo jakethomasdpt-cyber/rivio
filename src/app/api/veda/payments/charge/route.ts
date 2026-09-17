@@ -1,3 +1,4 @@
+import { insertIntegrationInvoice, saveOrganizationName } from '@/lib/integrationBranding';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createDatabaseClient } from '@/lib/database';
@@ -5,7 +6,6 @@ import {
   authenticateVedaRequest,
   centsToDollars,
   emitVedaInvoiceEvent,
-  generateInvoiceNumber,
   getAppUrl,
   getIdempotentResponse,
   hostedInvoiceUrl,
@@ -184,6 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     const dbClient = createDatabaseClient();
+    const provider = await saveOrganizationName(dbClient, tenant, body.vedaOrganizationName);
     const customer = await resolveOrCreateCustomer({ body, tenantUserId: tenant.user_id });
     const { data: client } = await dbClient
       .from('clients')
@@ -223,32 +224,26 @@ export async function POST(request: NextRequest) {
     const today = now.split('T')[0];
     let invoice = existingInvoice as any;
     if (!invoice) {
-      const invoiceNumber = generateInvoiceNumber();
-      const { data: created, error: invoiceError } = await dbClient
-        .from('invoices')
-        .insert({
-          user_id: tenant.user_id,
-          client_id: customer.client_id,
-          invoice_number: invoiceNumber,
-          status: 'draft',
-          subtotal: centsToDollars(amountCents),
-          tax_rate: 0,
-          tax_amount: 0,
-          total: centsToDollars(amountCents),
-          due_date: today,
-          notes: null,
-          internal_notes: 'Manual card charge from Veda EMR',
-          reminder_enabled: false,
-          accept_credit_card: true,
-          accept_ach: false,
-          accept_wallet: false,
-          veda_organization_id: vedaOrganizationId,
-          veda_patient_id: vedaPatientId,
-          veda_invoice_id: vedaInvoiceId,
-          veda_metadata: { ...(body.metadata || {}), manualCharge: true },
-        })
-        .select('id, invoice_number, status, total, portal_token, stripe_payment_intent_id')
-        .single();
+      const { data: created, error: invoiceError } = await insertIntegrationInvoice(dbClient, {
+        user_id: tenant.user_id,
+        client_id: customer.client_id,
+        status: 'draft',
+        subtotal: centsToDollars(amountCents),
+        tax_rate: 0,
+        tax_amount: 0,
+        total: centsToDollars(amountCents),
+        due_date: today,
+        notes: null,
+        internal_notes: 'Manual card charge from Veda EMR',
+        reminder_enabled: false,
+        accept_credit_card: true,
+        accept_ach: false,
+        accept_wallet: false,
+        veda_organization_id: vedaOrganizationId,
+        veda_patient_id: vedaPatientId,
+        veda_invoice_id: vedaInvoiceId,
+        veda_metadata: { ...(body.metadata || {}), manualCharge: true },
+      }, 'id, invoice_number, status, total, portal_token, stripe_payment_intent_id');
       if (invoiceError || !created) throw invoiceError || new Error('Failed to create manual charge invoice');
       invoice = created;
 
@@ -256,7 +251,7 @@ export async function POST(request: NextRequest) {
         invoice_id: invoice.id,
         service: line.label,
         description: line.description,
-        provider: 'Veda EMR',
+        provider,
         rate: centsToDollars(line.unitAmountCents),
         quantity: line.quantity,
         amount: centsToDollars(line.totalAmountCents),

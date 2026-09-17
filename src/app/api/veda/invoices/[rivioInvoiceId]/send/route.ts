@@ -1,3 +1,4 @@
+import { invoiceBranding } from '@/lib/integrationBranding';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createDatabaseClient } from '@/lib/database';
@@ -74,11 +75,12 @@ export async function POST(
       return NextResponse.json({ error: 'Patient email is required to send invoice' }, { status: 400 });
     }
 
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', invoice.user_id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     const sentAt = invoice.sent_at || new Date().toISOString();
     const responseBody = {

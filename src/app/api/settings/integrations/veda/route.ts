@@ -1,3 +1,4 @@
+import { organizationName } from '@/lib/integrationBranding';
 import { NextRequest, NextResponse } from 'next/server';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
@@ -59,7 +60,7 @@ async function loadState(userId: string) {
 
   const { data: mappings } = await db
     .from('veda_organization_mappings')
-    .select('veda_organization_id, display_name, webhook_base_url, notes, is_active, deleted_at, created_at, updated_at')
+    .select('veda_organization_id, display_name, organization_name, webhook_base_url, notes, is_active, deleted_at, created_at, updated_at')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -116,6 +117,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    let publicName: string | undefined;
+    try {
+      publicName = organizationName(body.vedaOrganizationName);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
     const vedaOrganizationId = String(body.vedaOrganizationId || '').trim();
     const displayName = String(body.displayName || 'Veda EMR').trim();
     const webhookBaseUrl = String(body.webhookBaseUrl || '').trim();
@@ -130,6 +137,7 @@ export async function POST(request: NextRequest) {
       {
         veda_organization_id: vedaOrganizationId,
         display_name: displayName || 'Veda EMR',
+        ...(publicName !== undefined ? { organization_name: publicName } : {}),
         user_id: user.id,
         workspace_id: workspace?.id,
         webhook_base_url: webhookBaseUrl || process.env.VEDA_WEBHOOK_BASE_URL || null,
@@ -166,12 +174,19 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
+    let publicName: string | undefined;
+    try {
+      publicName = organizationName(body.vedaOrganizationName);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
     const vedaOrganizationId = String(body.vedaOrganizationId || '').trim();
     if (!vedaOrganizationId) {
       return NextResponse.json({ error: 'Veda organization ID is required' }, { status: 400 });
     }
 
     const updates: Record<string, unknown> = {};
+    if (publicName !== undefined) updates.organization_name = publicName;
     if (typeof body.isActive === 'boolean') updates.is_active = body.isActive;
     if (typeof body.displayName === 'string') updates.display_name = body.displayName.trim() || 'Veda EMR';
     if (typeof body.webhookBaseUrl === 'string') updates.webhook_base_url = body.webhookBaseUrl.trim() || null;

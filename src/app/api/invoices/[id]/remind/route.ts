@@ -1,3 +1,4 @@
+import { invoiceBranding } from '@/lib/integrationBranding';
 import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
@@ -150,11 +151,12 @@ export async function POST(
       return NextResponse.json({ error: 'Client does not have an email address' }, { status: 400 });
     }
 
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', user.id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     let portalToken = invoice.portal_token;
     if (!portalToken) {

@@ -1,3 +1,4 @@
+import { invoiceBranding } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
@@ -47,6 +48,10 @@ export async function POST(request: NextRequest) {
       .select('*')
       .eq('invoice_id', invoice_id);
 
+    const { data: workspace } = await dbClient.from('workspaces')
+      .select('business_name').eq('user_id', invoice.user_id).single();
+    const { items } = await invoiceBranding(dbClient, invoice, workspace, lineItems || []);
+
     // Generate or use existing portal token
     let portalToken = invoice.portal_token;
     if (!portalToken) {
@@ -77,7 +82,7 @@ export async function POST(request: NextRequest) {
           },
         },
       }),
-      line_items: (lineItems || []).map((item) => ({
+      line_items: items.map((item) => ({
         price_data: {
           currency: 'usd',
           product_data: {

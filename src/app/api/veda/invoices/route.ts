@@ -1,10 +1,10 @@
+import { insertIntegrationInvoice, saveOrganizationName } from '@/lib/integrationBranding';
 import { NextRequest, NextResponse } from 'next/server';
 import { createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   centsToDollars,
   emitVedaInvoiceEvent,
-  generateInvoiceNumber,
   getIdempotentResponse,
   hostedInvoiceUrl,
   resolveVedaTenant,
@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
     }
 
     const dbClient = createDatabaseClient();
+    const provider = await saveOrganizationName(dbClient, tenant, body.vedaOrganizationName);
     const { data: existing } = await dbClient
       .from('invoices')
       .select('id, invoice_number, status, portal_token')
@@ -154,7 +155,6 @@ export async function POST(request: NextRequest) {
     }
 
     const customer = await resolveOrCreateCustomer({ body, tenantUserId: tenant.user_id });
-    const invoiceNumber = generateInvoiceNumber();
     const subtotalCents = body.lines.reduce((sum: number, line: any, index: number) => {
       const sourceType = requireString(line.sourceType, `lines[${index}].sourceType`);
       if (!SOURCE_TYPES.has(sourceType)) throw new Error(`lines[${index}].sourceType is invalid`);
@@ -162,31 +162,26 @@ export async function POST(request: NextRequest) {
     }, 0);
     const status = body.status === 'draft' ? 'draft' : 'draft';
 
-    const { data: invoice, error: invoiceError } = await dbClient
-      .from('invoices')
-      .insert({
-        user_id: tenant.user_id,
-        client_id: customer.client_id,
-        invoice_number: invoiceNumber,
-        status,
-        subtotal: centsToDollars(subtotalCents),
-        tax_rate: 0,
-        tax_amount: 0,
-        total: centsToDollars(subtotalCents),
-        due_date: dueDate,
-        notes: typeof body.notes === 'string' ? body.notes : null,
-        internal_notes: 'Created from Veda EMR',
-        reminder_enabled: false,
-        accept_credit_card: true,
-        accept_ach: true,
-        accept_wallet: true,
-        veda_organization_id: vedaOrganizationId,
-        veda_patient_id: vedaPatientId,
-        veda_invoice_id: vedaInvoiceId,
-        veda_metadata: body.metadata || {},
-      })
-      .select('id, invoice_number, status, portal_token')
-      .single();
+    const { data: invoice, error: invoiceError } = await insertIntegrationInvoice(dbClient, {
+      user_id: tenant.user_id,
+      client_id: customer.client_id,
+      status,
+      subtotal: centsToDollars(subtotalCents),
+      tax_rate: 0,
+      tax_amount: 0,
+      total: centsToDollars(subtotalCents),
+      due_date: dueDate,
+      notes: typeof body.notes === 'string' ? body.notes : null,
+      internal_notes: 'Created from Veda EMR',
+      reminder_enabled: false,
+      accept_credit_card: true,
+      accept_ach: true,
+      accept_wallet: true,
+      veda_organization_id: vedaOrganizationId,
+      veda_patient_id: vedaPatientId,
+      veda_invoice_id: vedaInvoiceId,
+      veda_metadata: body.metadata || {},
+    }, 'id, invoice_number, status, portal_token');
 
     if (invoiceError || !invoice) throw invoiceError || new Error('Failed to create invoice');
 
@@ -200,7 +195,7 @@ export async function POST(request: NextRequest) {
         invoice_id: invoice.id,
         service: requireString(line.label, `lines[${index}].label`).slice(0, 500),
         description: typeof line.description === 'string' ? line.description.slice(0, 1000) : null,
-        provider: 'Veda EMR',
+        provider,
         rate: centsToDollars(requireCents(line.unitAmountCents, `lines[${index}].unitAmountCents`)),
         quantity,
         amount: centsToDollars(requireCents(line.totalAmountCents, `lines[${index}].totalAmountCents`)),

@@ -1,3 +1,4 @@
+import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
@@ -337,11 +338,12 @@ export async function POST(
     }
 
     // Get workspace data
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', user.id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     // Get line items
     const { data: lineItems } = await dbClient
@@ -376,7 +378,7 @@ export async function POST(
     const emailHTML = generateInvoiceEmailHTML(
       invoice,
       invoice.clients,
-      lineItems || [],
+      brandInvoiceItems(invoice, workspace, lineItems || []),
       portalToken,
       workspace
     );

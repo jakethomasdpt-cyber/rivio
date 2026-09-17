@@ -1,3 +1,4 @@
+import { providerName } from '@/lib/integrationBranding';
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createDatabaseClient } from '@/lib/database';
@@ -84,19 +85,11 @@ export function hostedCustomerUrl(rivioCustomerId: string): string {
   return `${getAppUrl()}/dashboard/clients?customer=${encodeURIComponent(rivioCustomerId)}`;
 }
 
-export function generateInvoiceNumber(prefix = 'VEDA'): string {
-  const now = new Date();
-  const yy = now.getFullYear().toString().slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const random = crypto.randomInt(0, 100_000).toString().padStart(5, '0');
-  return `${prefix}${yy}${mm}-${random}`;
-}
-
 export async function resolveVedaTenant(vedaOrganizationId: string) {
   const dbClient = createDatabaseClient();
   const { data, error } = await dbClient
     .from('veda_organization_mappings')
-    .select('veda_organization_id, user_id, workspace_id, is_active, deleted_at')
+    .select('veda_organization_id, user_id, workspace_id, organization_name, is_active, deleted_at')
     .eq('veda_organization_id', vedaOrganizationId)
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -120,7 +113,10 @@ export async function resolveVedaTenant(vedaOrganizationId: string) {
     return null;
   }
 
-  return data as { veda_organization_id: string; user_id: string; workspace_id: string | null; is_active: boolean };
+  return {
+    ...data,
+    providerName: providerName(data.organization_name, workspace?.business_name),
+  } as { veda_organization_id: string; user_id: string; workspace_id: string | null; is_active: boolean; providerName: string };
 }
 
 export async function getIdempotentResponse(scope: string, key: string | null) {

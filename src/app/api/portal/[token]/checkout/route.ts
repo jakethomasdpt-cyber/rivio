@@ -1,3 +1,4 @@
+import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
@@ -66,11 +67,12 @@ export async function POST(
     }
 
     // Get workspace settings for surcharge config
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
-      .select('card_surcharge_rate, surcharge_enabled, surcharge_label')
+      .select('business_name, card_surcharge_rate, surcharge_enabled, surcharge_label')
       .eq('user_id', invoice.user_id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
       apiVersion: '2026-03-25.dahlia' as const,
@@ -113,7 +115,7 @@ export async function POST(
     }
 
     // ── Build Stripe line items ──────────────────────────────────────────
-    const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = lineItems.map((item) => ({
+    const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = brandInvoiceItems(invoice, workspace, lineItems).map((item) => ({
       price_data: {
         currency: 'usd',
         product_data: {

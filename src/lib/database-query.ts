@@ -2,7 +2,7 @@
 // It is server-only through database.ts; no browser database endpoint is exposed.
 export type Row = Record<string, any>;
 export type Executor = (sql: string, values: unknown[]) => Promise<{ rows: Row[]; rowCount: number | null }>;
-type Result<T> = { data: T; error: null } | { data: null; error: { message: string; code?: string } };
+type Result<T> = { data: T; error: null } | { data: null; error: { message: string; code?: string; constraint?: string } };
 const tables = new Set(['clients', 'invoices', 'line_items', 'timeline_events', 'workspaces',
   'bank_statements', 'bank_transactions', 'mileage_trips', 'veda_organization_mappings',
   'veda_integration_customers', 'payment_attempts', 'invoice_events', 'webhook_deliveries', 'idempotency_keys']);
@@ -165,7 +165,7 @@ export class DatabaseQuery<T = Row[]> implements PromiseLike<Result<T>> {
       return { data: (this.operation === 'select' || this.returning ? result.rows : null) as T, error: null };
     } catch (err) {
       // Do not return database error details: they can include client data or secrets.
-      return { data: null, error: { message: 'Database operation failed', code: (err as { code?: string }).code } };
+      return { data: null, error: { message: 'Database operation failed', code: (err as { code?: string }).code, constraint: (err as { constraint?: string }).constraint } };
     }
   }
   then<TResult1 = Result<T>, TResult2 = never>(onfulfilled?: ((value: Result<T>) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2> {

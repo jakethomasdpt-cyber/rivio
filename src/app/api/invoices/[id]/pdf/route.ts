@@ -1,3 +1,4 @@
+import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
@@ -50,11 +51,12 @@ export async function GET(
     }
 
     // Get workspace data
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', user.id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     // Get line items
     const { data: lineItems } = await dbClient
@@ -63,9 +65,9 @@ export async function GET(
       .eq('invoice_id', invoiceId)
       .order('sort_order', { ascending: true });
 
-    const items = lineItems || [];
+    const items = brandInvoiceItems(invoice, workspace, lineItems || []);
     const client = Array.isArray(invoice.clients) ? invoice.clients[0] : invoice.clients;
-    const businessName = workspace?.business_name || 'Physical Therapy 365';
+    const businessName = workspace?.business_name || 'Your Provider';
     const brandColor = workspace?.brand_color || '#004a99';
 
     // Parse hex color to RGB

@@ -1,3 +1,4 @@
+import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { emitVedaInvoiceEvent } from '@/lib/vedaIntegration';
@@ -36,11 +37,12 @@ export async function GET(
     }
 
     // Get workspace for the invoice's user
-    const { data: workspace } = await dbClient
+    const { data: rawWorkspace } = await dbClient
       .from('workspaces')
       .select('*')
       .eq('user_id', invoice.user_id)
       .single();
+    const { workspace } = await invoiceBranding(dbClient, invoice, rawWorkspace);
 
     // Get line items
     const { data: lineItems } = await dbClient
@@ -113,7 +115,7 @@ export async function GET(
 
     return NextResponse.json({
       ...invoiceData,
-      line_items: lineItems || [],
+      line_items: brandInvoiceItems(invoice, workspace, lineItems || []),
       workspace: workspace,
       surcharge: {
         enabled: surchargeEnabled && surchargeRate > 0,
