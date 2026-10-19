@@ -1,7 +1,8 @@
 import { insertIntegrationInvoice, saveOrganizationName } from '@/lib/integrationBranding';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createDatabaseClient } from '@/lib/database';
+import { stripeCreationWithDeclineRecovery, withInvoicePaymentOperation, InvoicePaymentConflict } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import {
   authenticateVedaRequest,
   centsToDollars,
@@ -302,7 +303,8 @@ export async function POST(request: NextRequest) {
     }
     const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await withInvoicePaymentOperation(getDatabasePool(), invoice.id, async (lockedClient) => {
+      const intent = await stripeCreationWithDeclineRecovery(() => stripe.paymentIntents.create({
       amount: amountCents,
       currency: 'usd',
       customer: stripeCustomerId,
@@ -320,7 +322,16 @@ export async function POST(request: NextRequest) {
         vedaInvoiceId,
         manualCharge: 'true',
       },
-    }, { idempotencyKey: `${idempotencyKey || invoice.id}:payment-intent` });
+    }, { idempotencyKey: `${idempotencyKey || invoice.id}:payment-intent` }));
+      await lockedClient.query('UPDATE public.invoices SET stripe_payment_intent_id=$2 WHERE id=$1', [invoice.id, intent.id]);
+      await lockedClient.query(`INSERT INTO public.payment_attempts
+        (invoice_id,status,amount_cents,payment_method,payment_processor,processor_payment_id,metadata)
+        VALUES ($1,$2,$3,'card','stripe',$4,$5)
+        ON CONFLICT (payment_processor,processor_payment_id) WHERE payment_processor IS NOT NULL AND processor_payment_id IS NOT NULL
+        DO UPDATE SET status=EXCLUDED.status,metadata=EXCLUDED.metadata`,
+      [invoice.id, intent.status === 'succeeded' ? 'succeeded' : intent.status === 'canceled' ? 'failed' : 'pending', amountCents, intent.id, JSON.stringify({ stripePaymentIntentStatus: intent.status })]);
+      return intent;
+    });
 
     if (paymentIntent.status !== 'succeeded') {
       const failureMessage = `Stripe payment status: ${paymentIntent.status}`;
@@ -368,6 +379,7 @@ export async function POST(request: NextRequest) {
     await storeIdempotentResponse(scope, idempotencyKey, 200, responseBody);
     return NextResponse.json(responseBody);
   } catch (err) {
+    if (err instanceof InvoicePaymentConflict) return NextResponse.json({ error: err.message }, { status: 409 });
     const message = err instanceof Error ? err.message : 'Failed to process Veda card charge';
     const status = message.includes('required') || message.includes('invalid') || message.includes('must') ? 400 : 500;
     console.error('POST /api/veda/payments/charge error:', err);
@@ -465,7 +477,7 @@ async function recordFailedAttempt({
   await dbClient.from('payment_attempts').upsert(
     {
       invoice_id: invoiceId,
-      status: 'failed',
+      status: metadata.stripePaymentIntentStatus === 'canceled' ? 'failed' : 'pending',
       amount_cents: amountCents,
       payment_method: 'card',
       payment_processor: 'stripe',

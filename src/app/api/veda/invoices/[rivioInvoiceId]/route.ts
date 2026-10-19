@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createDatabaseClient } from '@/lib/database';
+import { cancellationSafetyInstalled } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import { dollarsToCents, hostedInvoiceUrl, verifyHmacSignature } from '@/lib/vedaIntegration';
 
 export const dynamic = 'force-dynamic';
@@ -43,13 +44,17 @@ export async function GET(
       return NextResponse.json({ error: 'Veda invoice not found' }, { status: 404 });
     }
 
-    const { data: attempts } = await dbClient
+    const { data: attempts, error: attemptsError } = await dbClient
       .from('payment_attempts')
       .select('id, status, amount_cents, payment_method, payment_processor, processor_payment_id, failure_message, metadata, created_at')
       .eq('invoice_id', invoice.id)
       .order('created_at', { ascending: false });
 
+    if (attemptsError) throw attemptsError;
+    const safeCancellation = await cancellationSafetyInstalled(getDatabasePool());
     return NextResponse.json({
+      voidSafetyVersion: safeCancellation ? 1 : 0,
+      checkoutCancellationSupported: safeCancellation,
       rivioInvoiceId: invoice.id,
       invoiceNumber: invoice.invoice_number,
       status: invoice.status,

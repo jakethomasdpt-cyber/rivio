@@ -1,6 +1,7 @@
 import { invoiceBranding } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
-import { createDatabaseClient } from '@/lib/database';
+import { createCheckoutForLockedInvoice, InvoicePaymentConflict } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { randomBytes } from 'crypto';
@@ -72,7 +73,8 @@ export async function POST(request: NextRequest) {
     if (paymentMethods.length === 0) paymentMethods.push('card'); // safe fallback
 
     // Create checkout session
-    const session = await stripe.checkout.sessions.create({
+    const session = await createCheckoutForLockedInvoice(getDatabasePool(), stripe, invoice_id,
+      { userId: user.id, total: invoice.total }, {
       payment_method_types: paymentMethods,
       mode: 'payment',
       ...(invoice.accept_ach === true && {
@@ -100,22 +102,13 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         portal_token: portalToken,
       },
-    });
-
-    // Update invoice with stripe session ID and portal token
-    await dbClient
-      .from('invoices')
-      .update({
-        stripe_checkout_session_id: session.id,
-        portal_token: portalToken,
-      })
-      .eq('id', invoice_id)
-      .eq('user_id', user.id);
+    }, { portalToken });
 
     return NextResponse.json({
       url: session.url,
     });
   } catch (err) {
+    if (err instanceof InvoicePaymentConflict) return NextResponse.json({ error: err.message }, { status: 409 });
     console.error('POST /api/stripe/checkout error:', err);
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

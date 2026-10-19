@@ -1,6 +1,7 @@
 import { invoiceBranding } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
-import { createDatabaseClient } from '@/lib/database';
+import { assertInvoiceUnpaid, withLockedInvoice, InvoicePaymentConflict } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
@@ -49,26 +50,12 @@ export async function POST(
     const now = new Date().toISOString();
     const finalPaidDate = paid_date || now;
 
-    // Update invoice
-    const { data: invoice, error } = await dbClient
-      .from('invoices')
-      .update({
-        status: 'paid',
-        paid_date: finalPaidDate,
-        payment_method,
-        updated_at: now,
-      })
-      .eq('id', invoiceId)
-      .eq('user_id', user.id)
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json(
-        { error: 'Failed to update invoice' },
-        { status: 500 }
-      );
-    }
+    const invoice = await withLockedInvoice(getDatabasePool(), invoiceId, async (client, locked) => {
+      assertInvoiceUnpaid(locked);
+      if (locked.user_id !== user.id || locked.status === 'cancelled') throw new InvoicePaymentConflict('Invoice cannot be marked paid.');
+      const result = await client.query("UPDATE public.invoices SET status='paid',paid_date=$2,payment_method=$3,updated_at=$4 WHERE id=$1 RETURNING *", [invoiceId,finalPaidDate,payment_method,now]);
+      return result.rows[0];
+    });
 
     // Create timeline event
     await dbClient.from('timeline_events').insert([
@@ -194,6 +181,7 @@ export async function POST(
       line_items: lineItems || [],
     });
   } catch (err) {
+    if (err instanceof InvoicePaymentConflict) return NextResponse.json({ error: err.message }, { status: 409 });
     console.error('POST /api/invoices/[id]/mark-paid error:', err);
     return NextResponse.json(
       { error: 'Internal server error' },

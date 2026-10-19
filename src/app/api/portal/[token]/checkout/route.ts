@@ -1,5 +1,6 @@
 import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
-import { createDatabaseClient } from '@/lib/database';
+import { createCheckoutForLockedInvoice, InvoicePaymentConflict } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
@@ -187,23 +188,12 @@ export async function POST(
       };
     }
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
-
-    // Save session ID + surcharge amount back to invoice
-    const updatePayload: Record<string, any> = {
-      stripe_checkout_session_id: session.id,
-    };
-    if (surchargeAmount > 0) {
-      updatePayload.surcharge_amount = surchargeAmount;
-    }
-
-    await dbClient
-      .from('invoices')
-      .update(updatePayload)
-      .eq('id', invoice.id);
+    const session = await createCheckoutForLockedInvoice(getDatabasePool(), stripe, invoice.id,
+      { portalToken, total: invoice.total }, sessionParams, { surchargeAmount });
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
+    if (err instanceof InvoicePaymentConflict) return NextResponse.json({ error: err.message }, { status: 409 });
     console.error('POST /api/portal/[token]/checkout error:', err);
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
