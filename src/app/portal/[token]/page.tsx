@@ -1,5 +1,6 @@
 'use server';
 
+import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import { Invoice, Workspace } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import StripePayButton from './StripePayButton';
@@ -284,6 +285,9 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                     >
                       <td className="py-3 text-sm text-slate-900 dark:text-slate-100">
                         {item.service}
+                        {invoiceServiceDateLabel(item) && (
+                          <p className="mt-1 text-xs font-medium text-slate-700 dark:text-slate-300">{invoiceServiceDateLabel(item)}</p>
+                        )}
                         {item.description && (
                           <p className="text-xs text-slate-600 dark:text-slate-400">{item.description}</p>
                         )}

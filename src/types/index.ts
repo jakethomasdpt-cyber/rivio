@@ -20,6 +20,7 @@ export interface LineItem {
   service: string;
   description?: string;
   service_date?: string;
+  veda_metadata?: Record<string, unknown>;
   provider: string;
   rate: number;
   quantity: number;

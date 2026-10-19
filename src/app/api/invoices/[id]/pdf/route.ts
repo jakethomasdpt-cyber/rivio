@@ -1,3 +1,4 @@
+import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createAuthServerClient } from '@/lib/auth-server';
 import { createDatabaseClient } from '@/lib/database';
@@ -259,21 +260,27 @@ export async function GET(
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
 
-      // Check if we need a new page
-      if (y > 680) {
+      const serviceDate = invoiceServiceDateLabel(item);
+      doc.font('Helvetica').fontSize(10);
+      const serviceHeight = doc.heightOfString(item.service, { width: 170 });
+      const rowHeight = Math.max(32, serviceHeight + (serviceDate ? 16 : 0) + 16);
+      // Keep the date with its service when wrapping onto a new page.
+      if (y + rowHeight > 712) {
         doc.addPage();
         y = 50;
       }
 
       // Alternate row background
       if (i % 2 === 0) {
-        doc.rect(50, y, pageWidth, 32).fill('#ffffff');
+        doc.rect(50, y, pageWidth, rowHeight).fill('#ffffff');
       } else {
-        doc.rect(50, y, pageWidth, 32).fill('#fafbfc');
+        doc.rect(50, y, pageWidth, rowHeight).fill('#fafbfc');
       }
 
       doc.font('Helvetica').fontSize(10).fillColor('#1e293b')
         .text(item.service, colService + 10, y + 8, { width: 170 });
+      if (serviceDate) doc.font('Helvetica').fontSize(8).fillColor('#475569')
+        .text(serviceDate, colService + 10, y + 10 + serviceHeight, { width: 170 });
 
       doc.font('Helvetica').fontSize(9).fillColor('#64748b')
         .text(item.provider || '—', colProvider, y + 10, { width: 110 });
@@ -287,7 +294,7 @@ export async function GET(
       doc.font('Helvetica-Bold').fontSize(10).fillColor('#1e293b')
         .text(formatCurrency(Number(item.amount)), colAmount, y + 10, { width: 72, align: 'right' });
 
-      y += 32;
+      y += rowHeight;
     }
 
     // Bottom border

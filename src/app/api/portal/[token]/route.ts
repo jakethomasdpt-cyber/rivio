@@ -115,6 +115,7 @@ export async function GET(
 
     return NextResponse.json({
       ...invoiceData,
+      client: client ?? null,
       line_items: brandInvoiceItems(invoice, workspace, lineItems || []),
       workspace: workspace,
       surcharge: {

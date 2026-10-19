@@ -1,5 +1,6 @@
 'use client';
 
+import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -1017,7 +1018,7 @@ function InvoiceDetailView({
                 <p className="text-slate-900 dark:text-white">{item.service}</p>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
                   {item.provider || 'No provider set'}
-                  {item.service_date ? ` • ${formatDate(item.service_date)}` : ''}
+                  {invoiceServiceDateLabel(item) ? ` • ${invoiceServiceDateLabel(item)}` : ''}
                 </p>
               </div>
               <p className="font-medium text-slate-900 dark:text-white">
