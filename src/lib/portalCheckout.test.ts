@@ -72,7 +72,9 @@ test('patient checkout charges the configured percentage only on the invoice bal
     ['card', 0, 300, 10300], // Patient clears the amount.
     ['card', 1, 300, 10301],
     ['wallet', 2000, 300, 12300],
+    ['ach', undefined, 0, 10000],
     ['ach', 2000, 0, 12000],
+    ['ach', 0, 0, 10000],
   ] as const) {
     const before = sessions.length;
     const response = await checkout(method, extra);
@@ -96,6 +98,8 @@ test('patient checkout charges the configured percentage only on the invoice bal
   for (const invalid of [-1, 1.5, '2000', 99_999_999]) {
     assert.equal((await checkout('card', invalid)).status, 400);
   }
+  invoice.accept_ach = false;
+  assert.equal((await checkout('ach', 2000)).status, 400, 'a disabled ACH method cannot fall back to card');
   assert.equal(sessions.length, validRequests, 'invalid requests must never create a Stripe session');
 });
 
