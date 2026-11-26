@@ -9,6 +9,7 @@ import StripePayButton, { type SurchargeInfo } from './StripePayButton';
 import WalletPayButton from './WalletPayButton';
 
 interface OnlinePaymentOptionsProps {
+  previewOnly?: boolean;
   portalToken: string;
   invoiceTotal: number;
   allowAch: boolean;
@@ -19,7 +20,7 @@ interface OnlinePaymentOptionsProps {
 }
 
 export default function OnlinePaymentOptions({
-  portalToken, invoiceTotal, allowAch, allowCard, allowWallet, savedMethods, surcharge,
+  previewOnly, portalToken, invoiceTotal, allowAch, allowCard, allowWallet, savedMethods, surcharge,
 }: OnlinePaymentOptionsProps) {
   const [expanded, setExpanded] = useState(false);
   const [amount, setAmount] = useState('');
@@ -75,7 +76,7 @@ export default function OnlinePaymentOptions({
         </div>
         {error && <p id="optional-payment-error" role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
-      <fieldset disabled={!!error} className="min-w-0 space-y-3">
+      <fieldset disabled={previewOnly || !!error} className="min-w-0 space-y-3">
         {allowAch && savedMethods.length > 0 && <SavedAchPayButton {...buttonProps} savedMethods={savedMethods} />}
         {allowAch && <AchPayButton {...buttonProps} hasSurcharge={surcharge?.enabled} />}
         {(allowCard || allowWallet) && (

@@ -20,6 +20,9 @@ export async function POST(
 ) {
   try {
     const { token: portalToken } = await params;
+    if (process.env.VERCEL_ENV === 'preview' && process.env.RIVIO_PREVIEW_INVOICE) {
+      return NextResponse.json({ error: 'Payment collection is disabled for this invoice preview.' }, { status: 409 });
+    }
     const body = await request.json();
     const { payment_method } = body; // 'card' | 'ach' | 'wallet'
 

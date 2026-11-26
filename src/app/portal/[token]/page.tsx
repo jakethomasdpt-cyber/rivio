@@ -1,6 +1,7 @@
 'use server';
 
 import type { CheckoutReceipt } from '@/lib/checkoutReceipt';
+import { previewInvoice } from '@/lib/previewInvoice';
 import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import { Invoice, Workspace } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -112,7 +113,8 @@ function OverdueAlert() {
 export default async function PortalPage({ params, searchParams }: PageProps) {
   const { token } = await params;
   const { payment } = await searchParams;
-  const invoice = await fetchInvoice(token);
+  const fixture = previewInvoice(token);
+  const invoice: (Invoice & { receipt?: CheckoutReceipt | null }) | null = fixture || await fetchInvoice(token);
 
   if (!invoice) {
     return <NotFound />;
@@ -362,10 +364,11 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                 Choose how to pay
               </h2>
               <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-                All payments are secure and encrypted.
+                {fixture ? 'Test invoice. Compare the amounts below. Payment collection is disabled.' : 'All payments are secure and encrypted.'}
               </p>
               <div className="space-y-3">
                 <OnlinePaymentOptions
+                  previewOnly={!!fixture}
                   portalToken={token}
                   invoiceTotal={Number(invoice.total)}
                   allowAch={(invoice as any).accept_ach === true}
