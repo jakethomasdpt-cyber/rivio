@@ -1,3 +1,4 @@
+import { invoiceSurchargeCents, MAX_CHECKOUT_CENTS } from '@/lib/portalPaymentAmounts';
 import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createCheckoutForLockedInvoice, InvoicePaymentConflict } from '@/lib/invoicePaymentSafety';
 import { getDatabasePool, createDatabaseClient } from '@/lib/database';
@@ -21,6 +22,11 @@ export async function POST(
     const { token: portalToken } = await params;
     const body = await request.json();
     const { payment_method } = body; // 'card' | 'ach' | 'wallet'
+
+    const additionalCents = body.additional_payment_cents === undefined ? 0 : body.additional_payment_cents;
+    if (!Number.isSafeInteger(additionalCents) || additionalCents < 0 || additionalCents > MAX_CHECKOUT_CENTS) {
+      return NextResponse.json({ error: 'Additional payment must be a nonnegative amount in whole cents.' }, { status: 400 });
+    }
 
     const dbClient = createDatabaseClient();
 
@@ -90,6 +96,16 @@ export async function POST(
       ? ['us_bank_account']
       : ['card'];
 
+    const surchargeRate = Number(workspace?.card_surcharge_rate) || 0;
+    const surchargeLabel = workspace?.surcharge_label || 'Processing fee';
+    const balanceCents = Math.round(Number(invoice.total) * 100);
+    const surchargeCents = useCard && workspace?.surcharge_enabled !== false && surchargeRate > 0
+      ? invoiceSurchargeCents(Number(invoice.total), surchargeRate) : 0;
+    const surchargeAmount = surchargeCents / 100;
+    if (balanceCents + surchargeCents + additionalCents > MAX_CHECKOUT_CENTS) {
+      return NextResponse.json({ error: 'The checkout total exceeds the maximum payment amount.' }, { status: 400 });
+    }
+
     // ── Stripe Customer (get or create) ──────────────────────────────────
     // Reuse existing Stripe Customer for returning clients, or create one.
     // This enables saved payment methods for future invoices.
@@ -116,7 +132,7 @@ export async function POST(
     }
 
     // ── Build Stripe line items ──────────────────────────────────────────
-    const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = brandInvoiceItems(invoice, workspace, lineItems).map((item) => ({
+    const invoiceItems = brandInvoiceItems(invoice, workspace, lineItems).map((item) => ({
       price_data: {
         currency: 'usd',
         product_data: {
@@ -128,16 +144,17 @@ export async function POST(
       quantity: Number(item.quantity),
     }));
 
-    // ── Credit Card Surcharge ────────────────────────────────────────────
-    // Only applied to card payments when surcharge is enabled
-    let surchargeAmount = 0;
-    const surchargeEnabled = workspace?.surcharge_enabled !== false;
-    const surchargeRate = Number(workspace?.card_surcharge_rate) || 0;
-    const surchargeLabel = workspace?.surcharge_label || 'Processing fee';
+    // Taxes, discounts, or fractional quantities can make the stored balance
+    // differ from Stripe's integer-quantity line items. Charge the displayed balance.
+    const itemTotal = invoiceItems.reduce((sum, item) => sum + item.price_data.unit_amount * item.quantity, 0);
+    const canItemize = itemTotal === balanceCents && invoiceItems.every(item =>
+      Number.isSafeInteger(item.quantity) && item.quantity > 0 && item.price_data.unit_amount >= 0);
+    const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = canItemize ? invoiceItems : [{
+      price_data: { currency: 'usd', product_data: { name: 'Invoice balance' }, unit_amount: balanceCents },
+      quantity: 1,
+    }];
 
-    if (useCard && surchargeEnabled && surchargeRate > 0) {
-      surchargeAmount = Math.round(invoice.total * (surchargeRate / 100) * 100) / 100;
-
+    if (surchargeAmount > 0) {
       stripeLineItems.push({
         price_data: {
           currency: 'usd',
@@ -145,12 +162,29 @@ export async function POST(
             name: surchargeLabel,
             description: `${surchargeRate}% card processing fee`,
           },
-          unit_amount: Math.round(surchargeAmount * 100),
+          unit_amount: surchargeCents,
         },
         quantity: 1,
       });
     }
 
+    if (additionalCents > 0) {
+      stripeLineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Additional payment (optional)' },
+          unit_amount: additionalCents,
+        },
+        quantity: 1,
+      });
+    }
+
+    const paymentMetadata = {
+      invoice_id: invoice.id,
+      portal_token: portalToken,
+      surcharge_amount: String(surchargeAmount),
+      additional_payment_cents: String(additionalCents),
+    };
     // ── Create Stripe Checkout Session ───────────────────────────────────
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: paymentMethods,
@@ -159,12 +193,8 @@ export async function POST(
       line_items: stripeLineItems,
       success_url: `${appUrl}/portal/${portalToken}?payment=success`,
       cancel_url: `${appUrl}/portal/${portalToken}`,
-      metadata: {
-        invoice_id: invoice.id,
-        user_id: invoice.user_id,
-        portal_token: portalToken,
-        surcharge_amount: String(surchargeAmount),
-      },
+      metadata: { ...paymentMetadata, user_id: invoice.user_id },
+      payment_intent_data: { metadata: paymentMetadata },
     };
 
     // ACH-specific options: save bank account for future use
@@ -172,18 +202,6 @@ export async function POST(
       sessionParams.payment_method_options = {
         us_bank_account: {
           financial_connections: { permissions: ['payment_method'] },
-        },
-      };
-    }
-
-    // For card payments: propagate invoice_id to PaymentIntent
-    // (not compatible with setup_future_usage on ACH sessions)
-    if (!useAch) {
-      sessionParams.payment_intent_data = {
-        metadata: {
-          invoice_id: invoice.id,
-          portal_token: portalToken,
-          surcharge_amount: String(surchargeAmount),
         },
       };
     }

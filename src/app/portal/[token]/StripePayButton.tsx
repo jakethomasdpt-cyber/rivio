@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
 
-interface SurchargeInfo {
+export interface SurchargeInfo {
   enabled: boolean;
   rate: number;
   label: string;
@@ -13,10 +13,12 @@ interface SurchargeInfo {
 interface StripePayButtonProps {
   portalToken: string;
   total: number;
+  additionalPaymentCents: number;
+  onProcessingChange: (processing: boolean) => void;
   surcharge?: SurchargeInfo;
 }
 
-export default function StripePayButton({ portalToken, total, surcharge }: StripePayButtonProps) {
+export default function StripePayButton({ portalToken, total, additionalPaymentCents, onProcessingChange, surcharge }: StripePayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,13 +27,14 @@ export default function StripePayButton({ portalToken, total, surcharge }: Strip
 
   async function handlePay() {
     setLoading(true);
+    onProcessingChange(true);
     setError(null);
 
     try {
       const res = await fetch(`/api/portal/${portalToken}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_method: 'card' }),
+        body: JSON.stringify({ additional_payment_cents: additionalPaymentCents, payment_method: 'card' }),
       });
 
       if (!res.ok) {
@@ -40,10 +43,12 @@ export default function StripePayButton({ portalToken, total, surcharge }: Strip
       }
 
       const { url } = await res.json();
-      if (url) window.location.href = url;
+      if (!url) throw new Error('Checkout is unavailable. Please try again.');
+      window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
       setLoading(false);
+      onProcessingChange(false);
     }
   }
 

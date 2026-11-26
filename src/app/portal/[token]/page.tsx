@@ -1,20 +1,18 @@
 'use server';
 
+import type { CheckoutReceipt } from '@/lib/checkoutReceipt';
 import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import { Invoice, Workspace } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import StripePayButton from './StripePayButton';
+import OnlinePaymentOptions from './OnlinePaymentOptions';
 import VenmoPayButton from './VenmoPayButton';
-import AchPayButton from './AchPayButton';
-import WalletPayButton from './WalletPayButton';
-import SavedAchPayButton from './SavedAchPayButton';
 
 type PageProps = {
   params: Promise<{ token: string }>;
   searchParams: Promise<{ payment?: string }>;
 };
 
-async function fetchInvoice(token: string): Promise<Invoice | null> {
+async function fetchInvoice(token: string): Promise<(Invoice & { receipt?: CheckoutReceipt | null }) | null> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const res = await fetch(`${baseUrl}/api/portal/${token}`, {
@@ -333,6 +331,26 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                     {formatCurrency(invoice.total)}
                   </span>
                 </div>
+                {invoice.receipt && (invoice.receipt.additionalPaymentCents > 0 || invoice.receipt.surchargeCents > 0) && (
+                  <>
+                    {invoice.receipt.additionalPaymentCents > 0 && (
+                      <div className="flex justify-between">
+                        <span>Additional payment</span>
+                        <span>{formatCurrency(invoice.receipt.additionalPaymentCents / 100)}</span>
+                      </div>
+                    )}
+                    {invoice.receipt.surchargeCents > 0 && (
+                      <div className="flex justify-between">
+                        <span>Processing fee</span>
+                        <span>{formatCurrency(invoice.receipt.surchargeCents / 100)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-slate-200 pt-3 font-semibold dark:border-slate-700">
+                      <span>Total paid</span>
+                      <span>{formatCurrency(invoice.receipt.chargedAmountCents / 100)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -347,41 +365,15 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
                 All payments are secure and encrypted.
               </p>
               <div className="space-y-3">
-                {/* Saved Bank Account (one-click ACH) — shown first if available */}
-                {(invoice as any).saved_payment_methods?.length > 0 && (
-                  <SavedAchPayButton
-                    portalToken={token}
-                    total={invoice.total}
-                    savedMethods={(invoice as any).saved_payment_methods}
-                  />
-                )}
-
-                {/* ACH / Bank Transfer via Stripe — shown with "No fee" badge */}
-                {(invoice as any).accept_ach === true && (
-                  <AchPayButton
-                    portalToken={token}
-                    total={invoice.total}
-                    hasSurcharge={(invoice as any).surcharge?.enabled || false}
-                  />
-                )}
-
-                {/* Credit / Debit Card via Stripe — with surcharge info */}
-                {(invoice as any).accept_credit_card !== false && (
-                  <StripePayButton
-                    portalToken={token}
-                    total={invoice.total}
-                    surcharge={(invoice as any).surcharge}
-                  />
-                )}
-
-                {/* Apple Pay / Google Pay */}
-                {(invoice as any).accept_wallet === true && (
-                  <WalletPayButton
-                    portalToken={token}
-                    total={invoice.total}
-                    surcharge={(invoice as any).surcharge}
-                  />
-                )}
+                <OnlinePaymentOptions
+                  portalToken={token}
+                  invoiceTotal={Number(invoice.total)}
+                  allowAch={(invoice as any).accept_ach === true}
+                  allowCard={(invoice as any).accept_credit_card !== false}
+                  allowWallet={(invoice as any).accept_wallet === true}
+                  savedMethods={(invoice as any).saved_payment_methods ?? []}
+                  surcharge={(invoice as any).surcharge}
+                />
 
                 {/* Venmo */}
                 {venmoHandle && (invoice as any).accept_venmo !== false && (

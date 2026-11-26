@@ -1,3 +1,4 @@
+import { invoiceSurchargeCents } from '@/lib/portalPaymentAmounts';
 import { invoiceBranding, brandInvoiceItems } from '@/lib/integrationBranding';
 import { createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
@@ -78,12 +79,32 @@ export async function GET(
     // Remove internal_notes from response
     const { internal_notes, ...invoiceData } = invoice;
 
+    let receipt = null;
+    if (invoice.status === 'paid' && invoice.stripe_payment_intent_id) {
+      const { data: attempt, error: attemptError } = await dbClient.from('payment_attempts')
+        .select('metadata')
+        .eq('invoice_id', invoice.id)
+        .eq('payment_processor', 'stripe')
+        .eq('processor_payment_id', invoice.stripe_payment_intent_id)
+        .eq('status', 'succeeded')
+        .maybeSingle();
+      if (attemptError) throw new Error(attemptError.message);
+      const amounts = attempt?.metadata;
+      if (Number.isSafeInteger(amounts?.chargedAmountCents)) {
+        receipt = {
+          additionalPaymentCents: amounts.additionalPaymentCents,
+          surchargeCents: amounts.surchargeCents,
+          chargedAmountCents: amounts.chargedAmountCents,
+        };
+      }
+    }
+
     // Compute surcharge info for the portal UI
     const surchargeEnabled = workspace?.surcharge_enabled !== false;
     const surchargeRate = Number(workspace?.card_surcharge_rate) || 0;
     const surchargeLabel = workspace?.surcharge_label || 'Processing fee';
     const surchargeAmount = surchargeEnabled && surchargeRate > 0
-      ? Math.round(invoice.total * (surchargeRate / 100) * 100) / 100
+      ? invoiceSurchargeCents(Number(invoice.total), surchargeRate) / 100
       : 0;
 
     // Get client's Stripe Customer ID to check for saved payment methods
@@ -115,6 +136,7 @@ export async function GET(
 
     return NextResponse.json({
       ...invoiceData,
+      receipt,
       client: client ?? null,
       line_items: brandInvoiceItems(invoice, workspace, lineItems || []),
       workspace: workspace,
