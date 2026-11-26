@@ -1,5 +1,7 @@
 import { invoiceBranding } from '@/lib/integrationBranding';
-import { createDatabaseClient } from '@/lib/database';
+import { checkoutReceipt, type CheckoutReceipt } from '@/lib/checkoutReceipt';
+import { withLockedInvoice } from '@/lib/invoicePaymentSafety';
+import { getDatabasePool, createDatabaseClient } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
@@ -37,6 +39,16 @@ function formatDate(date: string | null): string {
   });
 }
 
+function receiptRows(invoiceTotal: number, receipt: CheckoutReceipt): string {
+  if (!receipt.additionalPaymentCents && !receipt.surchargeCents) return '';
+  const amounts: [string, number][] = [['Invoice amount', invoiceTotal]];
+  if (receipt.additionalPaymentCents) amounts.push(['Additional payment', receipt.additionalPaymentCents / 100]);
+  if (receipt.surchargeCents) amounts.push(['Processing fee', receipt.surchargeCents / 100]);
+  return amounts.map(([label, amount]) =>
+    `<tr><td style="padding-bottom:8px;">${label}</td><td align="right">${formatCurrency(amount)}</td></tr>`
+  ).join('');
+}
+
 // ─── Payment confirmation email ───────────────────────────────────────────────
 
 function generatePaymentConfirmationEmail({
@@ -44,7 +56,8 @@ function generatePaymentConfirmationEmail({
   brandColor,
   clientName,
   invoiceNumber,
-  total,
+  invoiceTotal,
+  receipt,
   paidDate,
   paymentMethodLabel,
   portalUrl,
@@ -53,7 +66,8 @@ function generatePaymentConfirmationEmail({
   brandColor: string;
   clientName: string;
   invoiceNumber: string;
-  total: number;
+  invoiceTotal: number;
+  receipt: CheckoutReceipt;
   paidDate: string;
   paymentMethodLabel: string;
   portalUrl: string;
@@ -135,9 +149,10 @@ function generatePaymentConfirmationEmail({
                             <td style="font-size:14px;color:#64748b;padding-bottom:8px;">Payment method</td>
                             <td align="right" style="font-size:14px;font-weight:600;color:#0f172a;padding-bottom:8px;">${safePaymentMethod}</td>
                           </tr>
+                          ${receiptRows(invoiceTotal, receipt)}
                           <tr>
                             <td style="font-size:16px;font-weight:700;color:#0f172a;padding-top:12px;border-top:1px solid #e2e8f0;">Amount paid</td>
-                            <td align="right" style="font-size:22px;font-weight:700;color:#16a34a;padding-top:12px;border-top:1px solid #e2e8f0;">${escapeHtml(formatCurrency(total))}</td>
+                            <td align="right" style="font-size:22px;font-weight:700;color:#16a34a;padding-top:12px;border-top:1px solid #e2e8f0;">${escapeHtml(formatCurrency(receipt.chargedAmountCents / 100))}</td>
                           </tr>
                         </table>
                       </td>
@@ -181,12 +196,16 @@ async function markInvoicePaid({
   invoiceId,
   stripeSessionId,
   stripePaymentIntentId,
+  metadata,
+  receivedCents,
   paymentMethodType, // 'card' | 'us_bank_account' | 'unknown'
 }: {
   invoiceId: string;
   stripeSessionId: string;
   stripePaymentIntentId: string | null;
   paymentMethodType: string;
+  metadata: Record<string, string> | null;
+  receivedCents: number;
 }) {
   const dbClient = createDatabaseClient();
   const now = new Date().toISOString();
@@ -203,7 +222,7 @@ async function markInvoicePaid({
 
   if (fetchError || !existing) {
     console.error(`[webhook] Invoice ${invoiceId} not found:`, fetchError?.message);
-    return;
+    throw new Error('Could not load invoice for Stripe settlement.');
   }
 
   if (existing.status === 'paid') {
@@ -218,50 +237,29 @@ async function markInvoicePaid({
       ? 'Credit / Debit Card'
       : 'Card';
 
-  // Update invoice status → paid
-  const { error: updateError } = await dbClient
-    .from('invoices')
-    .update({
-      status: 'paid',
-      paid_date: today,
-      paid_amount: existing.total,
-      payment_method: 'stripe',
-      stripe_checkout_session_id: stripeSessionId || undefined,
-      stripe_payment_intent_id: stripePaymentIntentId || undefined,
-      updated_at: now,
-    })
-    .eq('id', invoiceId);
-
-  if (updateError) {
-    console.error('[webhook] Failed to update invoice:', updateError);
-    return;
-  }
-
-  // Log timeline event
-  await dbClient.from('timeline_events').insert([{
-    invoice_id: invoiceId,
-    event_type: 'paid',
-    description: `Payment received via ${pmLabel}`,
-    created_at: now,
-  }]);
-
   const vedaPaymentMethod = mapStripePaymentMethod(paymentMethodType);
-  await dbClient.from('payment_attempts').upsert(
-    {
-      invoice_id: invoiceId,
-      status: 'succeeded',
-      amount_cents: dollarsToCents(existing.total),
-      payment_method: vedaPaymentMethod,
-      payment_processor: 'stripe',
-      processor_payment_id: stripePaymentIntentId || stripeSessionId,
-      metadata: {
-        stripeSessionId,
-        stripePaymentIntentId,
-        paymentMethodLabel: pmLabel,
-      },
-    },
-    { onConflict: 'payment_processor,processor_payment_id' }
-  );
+  const receipt = await withLockedInvoice(getDatabasePool(), invoiceId, async (client, invoice) => {
+    if (invoice.status === 'paid') return null;
+    const principalCents = dollarsToCents(invoice.total);
+    const receipt = checkoutReceipt(principalCents, receivedCents, metadata);
+    await client.query(`UPDATE public.invoices SET status='paid', paid_date=$2, paid_amount=total,
+      payment_method='stripe', stripe_checkout_session_id=COALESCE($3, stripe_checkout_session_id),
+      stripe_payment_intent_id=COALESCE($4, stripe_payment_intent_id), surcharge_amount=$5, updated_at=$6
+      WHERE id=$1`, [invoiceId, today, stripeSessionId || null, stripePaymentIntentId, receipt.surchargeCents / 100, now]);
+    await client.query(`INSERT INTO public.payment_attempts
+      (invoice_id,status,amount_cents,payment_method,payment_processor,processor_payment_id,metadata)
+      VALUES ($1,'succeeded',$2,$3,'stripe',$4,$5)
+      ON CONFLICT (payment_processor,processor_payment_id)
+      WHERE payment_processor IS NOT NULL AND processor_payment_id IS NOT NULL
+      DO UPDATE SET status='succeeded', failure_message=NULL,
+        metadata=payment_attempts.metadata || EXCLUDED.metadata, updated_at=now()`,
+      [invoiceId, principalCents, vedaPaymentMethod, stripePaymentIntentId || stripeSessionId,
+        JSON.stringify({ stripeSessionId, stripePaymentIntentId, paymentMethodLabel: pmLabel, ...receipt })]);
+    await client.query(`INSERT INTO public.timeline_events (invoice_id,event_type,description,created_at)
+      VALUES ($1,'paid',$2,$3)`, [invoiceId, `Payment received via ${pmLabel}`, now]);
+    return receipt;
+  });
+  if (!receipt) return;
 
   await emitVedaInvoiceEvent({
     eventType: 'invoice.paid',
@@ -271,6 +269,7 @@ async function markInvoicePaid({
     processorPaymentId: stripePaymentIntentId || stripeSessionId,
     metadata: {
       paymentMethodLabel: pmLabel,
+      ...receipt,
     },
   });
 
@@ -314,7 +313,8 @@ async function markInvoicePaid({
       brandColor,
       clientName: clientName || 'there',
       invoiceNumber: existing.invoice_number,
-      total: existing.total,
+      invoiceTotal: Number(existing.total),
+      receipt,
       paidDate: formatDate(today),
       paymentMethodLabel: pmLabel,
       portalUrl,
@@ -333,7 +333,7 @@ async function markInvoicePaid({
     await resend.emails.send({
       from: `${businessName} <invoices@physicaltherapy365.com>`,
       to: [bizEmail],
-      subject: `Payment received — ${existing.invoice_number} (${formatCurrency(existing.total)})`,
+      subject: `Payment received — ${existing.invoice_number} (${formatCurrency(receipt.chargedAmountCents / 100)})`,
       html: `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -366,9 +366,10 @@ async function markInvoicePaid({
                   <td style="font-size:13px;color:#64748b;padding-bottom:8px;">Payment</td>
                   <td align="right" style="font-size:13px;font-weight:600;color:#1e293b;padding-bottom:8px;">${escapeHtml(pmLabel)}</td>
                 </tr>
+                ${receiptRows(Number(existing.total), receipt)}
                 <tr>
                   <td style="font-size:14px;font-weight:700;color:#1e293b;padding-top:8px;border-top:1px solid #e2e8f0;">Amount</td>
-                  <td align="right" style="font-size:18px;font-weight:700;color:#16a34a;padding-top:8px;border-top:1px solid #e2e8f0;">${formatCurrency(existing.total)}</td>
+                  <td align="right" style="font-size:18px;font-weight:700;color:#16a34a;padding-top:8px;border-top:1px solid #e2e8f0;">${formatCurrency(receipt.chargedAmountCents / 100)}</td>
                 </tr>
               </table>
             </td></tr>
@@ -423,7 +424,7 @@ export async function POST(request: NextRequest) {
     // Fires immediately when Stripe Checkout is completed (card payments).
     // For ACH, this fires when the session is completed but funds may still be
     // pending — payment_intent.succeeded fires when funds actually clear.
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
       const invoiceId = session.metadata?.invoice_id;
 
@@ -450,6 +451,8 @@ export async function POST(request: NextRequest) {
         stripeSessionId: session.id,
         stripePaymentIntentId: session.payment_intent as string | null,
         paymentMethodType,
+        receivedCents: session.amount_total ?? NaN,
+        metadata: session.metadata,
       });
 
       // Ensure stripe_customer_id is saved to the client record
@@ -503,6 +506,8 @@ export async function POST(request: NextRequest) {
         stripeSessionId: '',
         stripePaymentIntentId: paymentIntent.id,
         paymentMethodType: pmType,
+        receivedCents: paymentIntent.amount_received,
+        metadata: paymentIntent.metadata,
       });
     }
 

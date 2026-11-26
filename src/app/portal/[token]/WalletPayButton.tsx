@@ -1,20 +1,18 @@
 'use client';
 
 import { useState } from 'react';
+import type { SurchargeInfo } from './StripePayButton';
 import { formatCurrency } from '@/lib/utils';
 
 interface WalletPayButtonProps {
   portalToken: string;
   total: number;
-  surcharge?: {
-    enabled: boolean;
-    rate: number;
-    label: string;
-    amount: number;
-  };
+  additionalPaymentCents: number;
+  onProcessingChange: (processing: boolean) => void;
+  surcharge?: SurchargeInfo;
 }
 
-export default function WalletPayButton({ portalToken, total, surcharge }: WalletPayButtonProps) {
+export default function WalletPayButton({ portalToken, total, additionalPaymentCents, onProcessingChange, surcharge }: WalletPayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSurcharge = surcharge?.enabled && surcharge.amount > 0;
@@ -22,13 +20,14 @@ export default function WalletPayButton({ portalToken, total, surcharge }: Walle
 
   async function handlePay() {
     setLoading(true);
+    onProcessingChange(true);
     setError(null);
 
     try {
       const res = await fetch(`/api/portal/${portalToken}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_method: 'wallet' }),
+        body: JSON.stringify({ additional_payment_cents: additionalPaymentCents, payment_method: 'wallet' }),
       });
 
       if (!res.ok) {
@@ -37,10 +36,12 @@ export default function WalletPayButton({ portalToken, total, surcharge }: Walle
       }
 
       const { url } = await res.json();
-      if (url) window.location.href = url;
+      if (!url) throw new Error('Checkout is unavailable. Please try again.');
+      window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
       setLoading(false);
+      onProcessingChange(false);
     }
   }
 

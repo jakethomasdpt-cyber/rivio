@@ -6,22 +6,25 @@ import { formatCurrency } from '@/lib/utils';
 interface AchPayButtonProps {
   portalToken: string;
   total: number;
+  additionalPaymentCents: number;
+  onProcessingChange: (processing: boolean) => void;
   hasSurcharge?: boolean;
 }
 
-export default function AchPayButton({ portalToken, total, hasSurcharge }: AchPayButtonProps) {
+export default function AchPayButton({ portalToken, total, additionalPaymentCents, onProcessingChange, hasSurcharge }: AchPayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handlePay() {
     setLoading(true);
+    onProcessingChange(true);
     setError(null);
 
     try {
       const res = await fetch(`/api/portal/${portalToken}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_method: 'ach' }),
+        body: JSON.stringify({ additional_payment_cents: additionalPaymentCents, payment_method: 'ach' }),
       });
 
       if (!res.ok) {
@@ -30,10 +33,12 @@ export default function AchPayButton({ portalToken, total, hasSurcharge }: AchPa
       }
 
       const { url } = await res.json();
-      if (url) window.location.href = url;
+      if (!url) throw new Error('Checkout is unavailable. Please try again.');
+      window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
       setLoading(false);
+      onProcessingChange(false);
     }
   }
 

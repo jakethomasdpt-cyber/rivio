@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
 
-interface SavedMethod {
+export interface SavedMethod {
   id: string;
   type: string;
   last4?: string;
@@ -13,10 +13,12 @@ interface SavedMethod {
 interface SavedAchPayButtonProps {
   portalToken: string;
   total: number;
+  additionalPaymentCents: number;
+  onProcessingChange: (processing: boolean) => void;
   savedMethods: SavedMethod[];
 }
 
-export default function SavedAchPayButton({ portalToken, total, savedMethods }: SavedAchPayButtonProps) {
+export default function SavedAchPayButton({ portalToken, total, additionalPaymentCents, onProcessingChange, savedMethods }: SavedAchPayButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +32,7 @@ export default function SavedAchPayButton({ portalToken, total, savedMethods }: 
 
   async function handlePay() {
     setLoading(true);
+    onProcessingChange(true);
     setError(null);
 
     try {
@@ -38,6 +41,7 @@ export default function SavedAchPayButton({ portalToken, total, savedMethods }: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           payment_method: 'ach',
+          additional_payment_cents: additionalPaymentCents,
           saved_payment_method_id: method.id,
         }),
       });
@@ -48,10 +52,12 @@ export default function SavedAchPayButton({ portalToken, total, savedMethods }: 
       }
 
       const { url } = await res.json();
-      if (url) window.location.href = url;
+      if (!url) throw new Error('Checkout is unavailable. Please try again.');
+      window.location.href = url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
       setLoading(false);
+      onProcessingChange(false);
     }
   }
 
