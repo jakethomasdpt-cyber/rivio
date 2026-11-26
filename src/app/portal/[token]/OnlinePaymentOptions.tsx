@@ -52,8 +52,9 @@ export default function OnlinePaymentOptions({
           aria-expanded={expanded}
           aria-controls="optional-payment-field"
           onClick={() => { setExpanded(!expanded); setAmount(''); }}
-          className="font-semibold text-blue-700 hover:underline dark:text-blue-400"
+          className="inline-flex items-center gap-2 font-semibold text-blue-700 hover:underline dark:text-blue-400"
         >
+          <span aria-hidden="true">{expanded ? '−' : '+'}</span>
           Additional payment (optional)
         </button>
         <div id="optional-payment-field" hidden={!expanded} className="mt-3">
