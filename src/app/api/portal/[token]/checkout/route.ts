@@ -91,8 +91,10 @@ export async function POST(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     // Determine payment method types
-    const useAch = payment_method === 'ach' && invoice.accept_ach === true;
-    const useWallet = payment_method === 'wallet' && invoice.accept_wallet === true;
+    const useAch = payment_method === 'ach';
+    if (useAch && invoice.accept_ach !== true) {
+      return NextResponse.json({ error: 'Bank transfer is unavailable for this invoice.' }, { status: 400 });
+    }
     const useCard = !useAch; // card or wallet both use 'card' type
 
     const paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = useAch
