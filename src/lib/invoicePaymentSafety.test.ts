@@ -44,6 +44,7 @@ function poolFixture(initial: any) {
     if (sql.includes('payment_attempts')) return { rows: [] };
     if (sql.includes("jsonb_build_object('paymentSafetyPending'")) row.veda_metadata.paymentSafetyPending = values![1];
     if (sql.includes("veda_metadata - 'paymentSafetyPending'")) delete row.veda_metadata.paymentSafetyPending;
+    if (sql.includes('SET stripe_checkout_session_id = $2')) row.stripe_checkout_session_id = values![1];
     return { rows: [] };
   } };
   return { pool: { async connect() { return client; } } as any, calls, row: () => row };
@@ -55,6 +56,62 @@ test('cancelled checkout is rejected before Stripe creation', async () => {
   await assert.rejects(createCheckoutForLockedInvoice(f.pool, stripe, invoice.id, { total: 250 }, {}), /Cancelled/);
   assert.equal(created, false);
   assert.ok(f.calls.some(sql => sql.includes('FOR UPDATE')));
+});
+
+test('repeated direct wallet setup reuses one session and preserves a completed checkout', async () => {
+  const f = poolFixture({ ...invoice, portal_token: 'fixture-token', accept_wallet: true });
+  const sessions: any[] = [];
+  const { stripe, expired } = stripeFixture(sessions);
+  stripe.checkout.sessions.create = async (params: any) => {
+    const session = { id: 'session-' + sessions.length, client_secret: 'fixture-secret', status: 'open',
+      payment_status: 'unpaid', metadata: { ...params.metadata }, ui_mode: params.ui_mode };
+    sessions.push(session);
+    return session;
+  };
+  const expected = { portalToken: 'fixture-token', total: 250, wallet: true };
+  const params = { ui_mode: 'elements' as const, mode: 'payment' as const, metadata: { invoice_id: invoice.id } };
+  const create = () => createCheckoutForLockedInvoice(f.pool, stripe, invoice.id, expected, params);
+  const first = await create();
+  assert.equal((await create()).id, first.id);
+  assert.equal(sessions.length, 1);
+  assert.deepEqual(expired, []);
+  sessions[0].status = 'complete';
+  sessions[0].payment_status = 'paid';
+  await assert.rejects(create());
+  assert.equal(sessions.length, 1);
+  assert.deepEqual(expired, []);
+});
+
+test('loading the direct wallet does not replace an active hosted payment session', async () => {
+  const f = poolFixture({ ...invoice, accept_wallet: true, stripe_checkout_session_id: 'active-hosted' });
+  const { stripe, expired } = stripeFixture([{ id: 'active-hosted', status: 'open', payment_status: 'unpaid',
+    ui_mode: 'hosted_page', metadata: { invoice_id: invoice.id } }]);
+  let creates = 0;
+  let lists = 0;
+  stripe.checkout.sessions.list = async function* () { lists++; };
+  stripe.checkout.sessions.create = async () => { creates++; throw Error('unexpected create'); };
+  await assert.rejects(createCheckoutForLockedInvoice(f.pool, stripe, invoice.id, { total: 250, wallet: true },
+    { ui_mode: 'elements', metadata: { invoice_id: invoice.id } }));
+  assert.equal(creates, 0);
+  assert.equal(lists, 0);
+  assert.deepEqual(expired, []);
+});
+
+test('Stripe rejects invalid native parameters without blocking a later hosted checkout', async () => {
+  const f = poolFixture({ ...invoice, accept_wallet: true });
+  const { stripe } = stripeFixture([]);
+  stripe.checkout.sessions.create = async (params: { ui_mode?: string }) => {
+    if (params.ui_mode === 'elements') throw Object.assign(Error('Invalid checkout configuration'), {
+      type: 'StripeInvalidRequestError', statusCode: 400,
+    });
+    return { id: 'fixture-hosted', url: 'https://example.test/checkout' };
+  };
+  const expected = { total: invoice.total, wallet: true };
+  await assert.rejects(createCheckoutForLockedInvoice(f.pool, stripe, invoice.id, expected, { ui_mode: 'elements' }),
+    /Invalid checkout configuration/);
+  assert.equal(f.row().veda_metadata.paymentSafetyPending, undefined);
+  const hosted = await createCheckoutForLockedInvoice(f.pool, stripe, invoice.id, expected, { mode: 'payment' });
+  assert.equal(hosted.id, 'fixture-hosted');
 });
 test('ambiguous Stripe outcome retains a committed reservation and blocks void/retry', async () => {
   const f = poolFixture(invoice);

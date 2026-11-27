@@ -358,12 +358,6 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
           {/* Payment Section */}
           {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
             <div className="px-8 py-8">
-              <h2 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">
-                Choose how to pay
-              </h2>
-              <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-                All payments are secure and encrypted.
-              </p>
               <div className="space-y-3">
                 <OnlinePaymentOptions
                   portalToken={token}

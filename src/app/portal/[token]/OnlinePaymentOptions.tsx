@@ -25,7 +25,13 @@ export default function OnlinePaymentOptions({
   const [amount, setAmount] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  if (!allowAch && !allowCard && !allowWallet) return null;
+  const paymentMethodsHeading = (
+    <header>
+      <h2 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">Choose how to pay</h2>
+      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">All payments are secure and encrypted.</p>
+    </header>
+  );
+  if (!allowAch && !allowCard && !allowWallet) return paymentMethodsHeading;
 
   const additionalPaymentCents = parseAdditionalPayment(amount);
   const totalCents = Math.round(invoiceTotal * 100) + (additionalPaymentCents ?? 0);
@@ -76,6 +82,7 @@ export default function OnlinePaymentOptions({
         </div>
         {error && <p id="optional-payment-error" role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
+      {paymentMethodsHeading}
       <fieldset disabled={!!error} className="min-w-0 space-y-3">
         {allowAch && savedMethods.length > 0 && <SavedAchPayButton {...buttonProps} savedMethods={savedMethods} />}
         {allowAch && <AchPayButton {...buttonProps} hasSurcharge={surcharge?.enabled} />}
@@ -85,7 +92,8 @@ export default function OnlinePaymentOptions({
               <p role="status" className="text-sm">The card total including fees exceeds the {formatCurrency(MAX_CHECKOUT_CENTS / 100)} limit.</p>
             )}
             {allowCard && <StripePayButton {...buttonProps} surcharge={surcharge} />}
-            {allowWallet && <WalletPayButton {...buttonProps} surcharge={surcharge} />}
+            {allowWallet && <WalletPayButton key={`${portalToken}:${totalCents}:${surchargeCents}:${Boolean(error)}`} {...buttonProps}
+              validAmount={!error && !cardLimitExceeded} processing={processing} surcharge={surcharge} />}
           </fieldset>
         )}
       </fieldset>

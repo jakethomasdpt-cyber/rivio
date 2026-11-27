@@ -23,6 +23,11 @@ export async function POST(
     const body = await request.json();
     const { payment_method } = body; // 'card' | 'ach' | 'wallet'
 
+    const directWallet = body.ui_mode === 'elements';
+    if (body.ui_mode !== undefined && (!directWallet || payment_method !== 'wallet')) {
+      return NextResponse.json({ error: 'Unsupported checkout mode.' }, { status: 400 });
+    }
+
     const additionalCents = body.additional_payment_cents === undefined ? 0 : body.additional_payment_cents;
     if (!Number.isSafeInteger(additionalCents) || additionalCents < 0 || additionalCents > MAX_CHECKOUT_CENTS) {
       return NextResponse.json({ error: 'Additional payment must be a nonnegative amount in whole cents.' }, { status: 400 });
@@ -58,6 +63,10 @@ export async function POST(
         { error: 'This invoice cannot be paid.' },
         { status: 400 }
       );
+    }
+
+    if (payment_method === 'wallet' && invoice.accept_wallet !== true) {
+      return NextResponse.json({ error: 'Wallet payments are unavailable for this invoice.' }, { status: 400 });
     }
 
     // Get line items
@@ -108,6 +117,14 @@ export async function POST(
       return NextResponse.json({ error: 'The checkout total exceeds the maximum payment amount.' }, { status: 400 });
     }
 
+    const amountCents = balanceCents + surchargeCents + additionalCents;
+    if (directWallet && (!Number.isSafeInteger(body.expected_total_cents) || body.expected_total_cents <= 0)) {
+      return NextResponse.json({ error: 'An expected wallet total in whole cents is required.' }, { status: 400 });
+    }
+    if (directWallet && body.expected_total_cents !== amountCents) {
+      return NextResponse.json({ error: 'The payment total changed. Refresh the invoice before paying.' }, { status: 409 });
+    }
+
     // ── Stripe Customer (get or create) ──────────────────────────────────
     // Reuse existing Stripe Customer for returning clients, or create one.
     // This enables saved payment methods for future invoices.
@@ -123,7 +140,7 @@ export async function POST(
           pt365_client_id: client.id,
           invoice_user_id: invoice.user_id,
         },
-      });
+      }, { idempotencyKey: `portal-customer:${invoice.user_id}:${client.id}` });
       stripeCustomerId = customer.id;
 
       // Save Stripe Customer ID back to client record
@@ -193,8 +210,13 @@ export async function POST(
       mode: 'payment',
       customer: stripeCustomerId || undefined,
       line_items: stripeLineItems,
-      success_url: `${appUrl}/portal/${portalToken}?payment=success`,
-      cancel_url: `${appUrl}/portal/${portalToken}`,
+      ...(directWallet ? {
+        ui_mode: 'elements',
+        return_url: `${appUrl}/portal/${portalToken}?payment=success`,
+      } : {
+        success_url: `${appUrl}/portal/${portalToken}?payment=success`,
+        cancel_url: `${appUrl}/portal/${portalToken}`,
+      }),
       metadata: { ...paymentMetadata, user_id: invoice.user_id },
       payment_intent_data: { metadata: paymentMetadata },
     };
@@ -209,9 +231,13 @@ export async function POST(
     }
 
     const session = await createCheckoutForLockedInvoice(getDatabasePool(), stripe, invoice.id,
-      { portalToken, total: invoice.total }, sessionParams, { surchargeAmount });
+      { portalToken, total: invoice.total, wallet: payment_method === 'wallet' }, sessionParams, { surchargeAmount });
 
-    return NextResponse.json({ url: session.url });
+    if (directWallet && (!session.client_secret || session.amount_total !== amountCents)) {
+      throw new InvoicePaymentConflict('Stripe could not confirm the reviewed wallet total. Refresh the invoice.');
+    }
+    return NextResponse.json(directWallet ? { clientSecret: session.client_secret, amountCents } : { url: session.url },
+      { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (err) {
     if (err instanceof InvoicePaymentConflict) return NextResponse.json({ error: err.message }, { status: 409 });
     console.error('POST /api/portal/[token]/checkout error:', err);

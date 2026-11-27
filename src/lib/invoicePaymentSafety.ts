@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type Stripe from 'stripe';
 
@@ -75,9 +75,9 @@ export async function expireInvoiceCheckoutSessions(stripe: Stripe, invoice: Rec
   }
 }
 
-class DefinitiveStripeDecline extends Error {
+class RecoverablePaymentFailure extends Error {
   readonly original: unknown;
-  constructor(original: unknown) { super('Stripe declined the payment before any charge succeeded.'); this.original = original; }
+  constructor(original: unknown) { super('The payment operation can be retried.'); this.original = original; }
 }
 
 /** Wrap only the Stripe creation call, never persistence after a successful charge. */
@@ -88,7 +88,7 @@ export async function stripeCreationWithDeclineRecovery<T>(create: () => Promise
     if (failure?.type === 'StripeCardError' && (intent
       ? ['requires_payment_method', 'canceled'].includes(intent.status ?? '')
       : failure.code === 'card_declined')) {
-      throw new DefinitiveStripeDecline(error);
+      throw new RecoverablePaymentFailure(error);
     }
     throw error;
   }
@@ -114,7 +114,7 @@ export async function withInvoicePaymentOperation<T>(pool: Pool, invoiceId: stri
     return value;
     });
   } catch (error) {
-    if (error instanceof DefinitiveStripeDecline) {
+    if (error instanceof RecoverablePaymentFailure) {
       await withLockedInvoice(pool, invoiceId, async (client, invoice) => {
         if (invoice.veda_metadata?.paymentSafetyPending === operationId) {
           await client.query("UPDATE public.invoices SET veda_metadata = veda_metadata - 'paymentSafetyPending' WHERE id=$1", [invoiceId]);
@@ -126,20 +126,85 @@ export async function withInvoicePaymentOperation<T>(pool: Pool, invoiceId: stri
   }
 }
 
+/** Older checkouts could leave multiple links active. Inspect them once, before replacing a legacy session. */
+async function reconcileCheckoutSessions(stripe: Stripe, invoice: Record<string, any>, hash: string, directWallet: boolean) {
+  if (!invoice.stripe_checkout_session_id) return null;
+  const latest = await stripe.checkout.sessions.retrieve(invoice.stripe_checkout_session_id);
+  if (latest.metadata?.invoice_id !== invoice.id) throw new InvoicePaymentConflict('Stored checkout belongs to a different invoice.');
+  if (latest.status === 'complete' || latest.payment_status === 'paid') {
+    throw new InvoicePaymentConflict('Stripe payment is completed or processing.');
+  }
+  if (latest.status === 'open' && directWallet && latest.ui_mode !== 'elements') {
+    throw new InvoicePaymentConflict('A hosted checkout is already open for this invoice.');
+  }
+  const sessions: Stripe.Checkout.Session[] = [latest];
+  if (!latest.metadata?.checkout_terms_hash) {
+    const created = Math.floor(new Date(invoice.created_at).getTime() / 1000);
+    if (!Number.isFinite(created)) throw new InvoicePaymentConflict('Invoice creation time is unavailable.');
+    // Legacy dashboard checkout had no customer ID; filtering by customer would miss those links.
+    for await (const historical of stripe.checkout.sessions.list({ created: { gte: created, lte: latest.created }, limit: 100 })) {
+      if (historical.metadata?.invoice_id === invoice.id && historical.id !== latest.id) sessions.push(historical);
+    }
+  }
+  for (const session of sessions) {
+    if (session.status === 'complete' || session.payment_status === 'paid') {
+      throw new InvoicePaymentConflict('Stripe payment is completed or processing.');
+    }
+    if (session.status === 'open' && directWallet && session.ui_mode !== 'elements') {
+      throw new InvoicePaymentConflict('A hosted checkout is already open for this invoice.');
+    }
+  }
+  if (latest.status === 'open' && latest.metadata?.checkout_terms_hash === hash
+    && (directWallet ? latest.ui_mode === 'elements' && latest.client_secret : latest.url)) {
+    return latest;
+  }
+  for (const session of sessions) {
+    const inactive = session.status === 'open' ? await stripe.checkout.sessions.expire(session.id) : session;
+    if (inactive.status !== 'expired') throw new InvoicePaymentConflict('Previous checkout is still active.');
+    if (inactive.payment_intent) {
+      const intent = typeof inactive.payment_intent === 'string'
+        ? await stripe.paymentIntents.retrieve(inactive.payment_intent) : inactive.payment_intent;
+      await requireInactiveIntent(stripe, intent);
+    }
+  }
+  return null;
+}
+
 export async function createCheckoutForLockedInvoice(pool: Pool, stripe: Stripe, invoiceId: string,
-  expected: { userId?: string; portalToken?: string; total: number }, params: Stripe.Checkout.SessionCreateParams,
+  expected: { userId?: string; portalToken?: string; total: number; wallet?: boolean }, params: Stripe.Checkout.SessionCreateParams,
   update: { portalToken?: string; surchargeAmount?: number } = {}) {
   return withInvoicePaymentOperation(pool, invoiceId, async (client, invoice) => {
     assertInvoiceUnpaid(invoice);
-    if (invoice.status === 'cancelled'
+    if (invoice.status === 'cancelled' || (expected.wallet && invoice.accept_wallet !== true)
       || (expected.userId && invoice.user_id !== expected.userId)
       || (expected.portalToken && invoice.portal_token !== expected.portalToken)
       || Number(invoice.total) !== Number(expected.total)
       || (invoice.portal_token_expires_at && new Date(invoice.portal_token_expires_at) < new Date())) {
-      throw new InvoicePaymentConflict('Invoice changed or is no longer payable. Refresh the invoice.');
+      throw new RecoverablePaymentFailure(new InvoicePaymentConflict('Invoice changed or is no longer payable. Refresh the invoice.'));
     }
     await assertNoRecordedPayments(client, invoiceId);
-    const session = await stripeCreationWithDeclineRecovery(() => stripe.checkout.sessions.create(params));
+    const hash = createHash('sha256').update(JSON.stringify(params)).digest('hex');
+    try {
+      const existing = await reconcileCheckoutSessions(stripe, invoice, hash, params.ui_mode === 'elements');
+      if (existing) return existing;
+    } catch (error) {
+      // No new checkout has been requested. A refreshed attempt must check the old Stripe state again.
+      throw new RecoverablePaymentFailure(error);
+    }
+    const session = await stripeCreationWithDeclineRecovery(async () => {
+      try {
+        return await stripe.checkout.sessions.create({
+          ...params, metadata: { ...params.metadata, checkout_terms_hash: hash },
+        }, { idempotencyKey: `invoice-checkout:${invoiceId}:${invoice.stripe_checkout_session_id || 'first'}:${hash}` });
+      } catch (error) {
+        // A rejected parameter cannot create a payable session. Keep hosted checkout available.
+        const failure = error as { type?: string; statusCode?: number };
+        if (failure.type === 'StripeInvalidRequestError' && failure.statusCode === 400) {
+          throw new RecoverablePaymentFailure(error);
+        }
+        throw error;
+      }
+    });
     try {
       await client.query(`UPDATE public.invoices SET stripe_checkout_session_id = $2,
         portal_token = COALESCE($3, portal_token), surcharge_amount = COALESCE($4, surcharge_amount)
