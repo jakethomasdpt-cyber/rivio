@@ -1,6 +1,7 @@
-'use server';
-
+import type { Metadata } from 'next';
+import { cache } from 'react';
 import type { CheckoutReceipt } from '@/lib/checkoutReceipt';
+import { isPhysicalTherapy365Workspace } from '@/lib/vedaWorkspace';
 import { invoiceServiceDateLabel } from '@/lib/invoiceServiceDate';
 import { Invoice, Workspace } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -12,10 +13,10 @@ type PageProps = {
   searchParams: Promise<{ payment?: string }>;
 };
 
-async function fetchInvoice(token: string): Promise<(Invoice & { receipt?: CheckoutReceipt | null }) | null> {
+const fetchInvoice = cache(async (token: string): Promise<(Invoice & { receipt?: CheckoutReceipt | null }) | null> => {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/portal/${token}`, {
+    const res = await fetch(`${baseUrl}/api/portal/${encodeURIComponent(token)}`, {
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -25,6 +26,21 @@ async function fetchInvoice(token: string): Promise<(Invoice & { receipt?: Check
   } catch {
     return null;
   }
+});
+
+export async function generateMetadata({ params }: Pick<PageProps, 'params'>): Promise<Metadata> {
+  const { token } = await params;
+  const invoice = await fetchInvoice(token);
+  const businessName = invoice?.workspace?.business_name?.trim();
+  const issuer = isPhysicalTherapy365Workspace(businessName) ? 'PT365' : businessName;
+  const title = issuer ? `Invoice from ${issuer}` : 'Invoice';
+  const description = 'View your invoice.';
+
+  return {
+    title, description,
+    openGraph: { title, description },
+    twitter: { card: 'summary', title, description },
+  };
 }
 
 function getStatusBadgeColor(status: Invoice['status']): string {
@@ -125,7 +141,9 @@ export default async function PortalPage({ params, searchParams }: PageProps) {
     : '#2563eb';
   const venmoHandle = workspace?.venmo_handle || '';
   const zelleContact = workspace?.zelle_phone || '';
-  const businessEmail = workspace?.email || '';
+  const businessEmail = isPhysicalTherapy365Workspace(businessName) || businessName.trim().toLowerCase() === 'pt365'
+    ? 'jake@physicaltherapy365.com'
+    : workspace?.email || '';
   const businessWebsite = workspace?.website || '';
 
   return (
